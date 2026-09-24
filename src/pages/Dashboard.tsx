@@ -2,15 +2,19 @@ import { Link } from 'react-router-dom'
 import { Flame, Bookmark, Trophy, ArrowUpRight, Clock } from 'lucide-react'
 import { useApp } from '@/store/AppContext'
 import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip } from 'recharts'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { recallApi } from '@/api/client'
 
 export default function Dashboard(){
   const { questions, streak, user, loading, selectedTopics, selectedBundle } = useApp()
   const [progress, setProgress] = useState<any>(null)
+  const didProgress = useRef(false)
   useEffect(()=>{
+    if (!user) return
+    if (didProgress.current) return
+    didProgress.current = true
     recallApi.progress().then(setProgress).catch(()=>{})
-  },[])
+  },[user])
   const mastered = progress?.mastered ?? questions.filter(q=>q.confidenceScore>=80).length
   const bookmarked = questions.filter(q=>q.bookmarked).length
   const reviewed = progress?.totalReviews ?? questions.filter(q=>q.reviewCount>0).length

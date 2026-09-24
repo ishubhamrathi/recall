@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { Question, Topic } from '@/data/mockData'
 import { recallApi } from '@/api/client'
 
@@ -102,12 +102,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try { return JSON.parse(localStorage.getItem('recall_notes') || '{}') } catch { return {} }
   })
 
+  const didInit = useRef(false)
   useEffect(() => {
+    if (didInit.current) return
+    didInit.current = true
     let cancelled = false
-    recallApi.auth.me(true).then(u => {
-      if (!cancelled) setUser(u as any)
-    }).catch(() => {})
     setLoading(true)
+    // public questions — always fetch, but silent on network fail to avoid spam for anon/offline
     recallApi.questions({ status: 'approved', size: 100, sort: 'created_at.desc' })
       .then(res => {
         if (cancelled) return
@@ -115,21 +116,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         let mapped: Question[] = []
         if (Array.isArray(list) && list.length > 0) mapped = list.map(normalizeQuestion)
         else if (Array.isArray(res) && res.length > 0) mapped = (res as any).map(normalizeQuestion)
-        setQuestions(dedupeQuestions(mapped))
+        if (mapped.length) setQuestions(dedupeQuestions(mapped))
       })
       .catch((err: any) => {
-        if (!cancelled) {
-          setQuestions([])
-          // do not expose internal URL - client already shows generic "Service temporarily unavailable"
-          const msg = err?.isNetworkError ? err.message : (err?.message || 'Failed to load questions')
-          console.error('[recallApi.questions]', err)
-          // only show non-network errors to user; network errors already generic
-          if (!err?.isNetworkError) setToast(msg)
-          else setToast('Service temporarily unavailable')
-        }
+        if (cancelled) return
+        // silent for network — backend may be down locally; keep empty without toast spam
+        if (err?.isNetworkError) console.warn('[recallApi.questions] offline, using local fallback', err.message)
+        else console.error('[recallApi.questions]', err)
       })
       .finally(() => { if (!cancelled) setLoading(false) })
-    recallApi.progress().then(p => { if (!cancelled && typeof p.streak === 'number') setStreak(p.streak) }).catch((e)=> console.warn('[recallApi.progress]', e))
+
+    // auth — silent 401 for anon; only fetch progress if logged in
+    recallApi.auth.me(true).then(u => {
+      if (cancelled) return
+      setUser(u as any)
+      // progress is auth-only; fetch only when logged in to avoid 401/connection spam for anon
+      return recallApi.progress().then(p => { if (!cancelled && typeof p.streak === 'number') setStreak(p.streak) }).catch(()=>{})
+    }).catch(() => { if (!cancelled) setUser(null) })
+
     return () => { cancelled = true }
   }, [])
   useEffect(() => { if (toast) { const t = setTimeout(()=>setToast(null), 2500); return ()=>clearTimeout(t)} }, [toast])
