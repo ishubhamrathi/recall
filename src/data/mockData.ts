@@ -38,5 +38,5 @@ export const TOPIC_BUNDLES: TopicBundle[] = [
   { slug: 'ai-engineer', name: 'AI Engineer', description: 'DSA • AI • DB • Java', topics: ['AI Engineering', 'DSA', 'Database', 'Java'], color: '#F97316' },
   { slug: 'backend-engineer', name: 'Backend Engineer', description: 'Java • Spring • System • DB', topics: ['Java', 'Spring Boot', 'System Design', 'Database', 'Networking'], color: '#22C55E' },
   { slug: 'frontend-engineer', name: 'Frontend Engineer', description: 'JS • React • System', topics: ['JavaScript', 'React', 'System Design'], color: '#61DAFB' },
-  { slug: 'fullstack', name: 'Full Stack', description: 'DSA + Full Stack Mix', topics: ['DSA', 'Java', 'Spring Boot', 'JavaScript', 'React', 'System Design', 'Database'], color: '#8B5CF6' },
+  { slug: 'fullstack', name: 'Full Stack', description: 'DSA + Full Stack Bundle', topics: ['DSA', 'Java', 'Spring Boot', 'JavaScript', 'React', 'System Design', 'Database'], color: '#8B5CF6' },
 ]

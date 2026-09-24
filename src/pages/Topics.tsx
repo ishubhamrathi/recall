@@ -39,13 +39,13 @@ export default function Topics(){
     setSelectedBundle(b.slug)
     setSelectedTopics(b.topics)
     setSelectedTopic('All')
-    navigate('/learn?mix=recall')
+    navigate('/learn?bundle=recall')
   }
 
-  const generateMix = () => {
+  const generateBundle = () => {
     if (selectedTopics.length===0) return
     setSelectedBundle(null)
-    navigate('/learn?mix=recall')
+    navigate('/learn?bundle=recall')
   }
 
   const clearSelection = () => {
@@ -60,13 +60,13 @@ export default function Topics(){
     <div className="space-y-8 max-w-6xl">
       <div>
         <h1 className="text-2xl font-bold">Topics</h1>
-        <p className="text-slate-400 text-sm">Pick a bundle or mix multiple topics for spaced recall</p>
+        <p className="text-slate-400 text-sm">Pick a bundle or combine multiple topics for spaced recall</p>
       </div>
 
       {/* Bundles — backend-driven, fallback to client */}
       <div>
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Pre-built Mixes</h2>
+          <h2 className="font-semibold">Pre-built Bundles</h2>
           <span className="text-xs text-slate-500">from backend • fallback local</span>
         </div>
         <div className="mt-4 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -78,7 +78,7 @@ export default function Topics(){
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {b.topics.map(t=> <span key={t} className="text-[11px] px-2 py-1 rounded-full bg-white/5 border border-white/10 text-slate-400">{t}</span>)}
               </div>
-              <button onClick={()=> startBundle(b)} className="mt-4 w-full py-2 rounded-full bg-white text-slate-900 text-sm font-medium text-center">Start Mix • {b.topics.length} topics</button>
+              <button onClick={()=> startBundle(b)} className="mt-4 w-full py-2 rounded-full bg-white text-slate-900 text-sm font-medium text-center">Start Bundle • {b.topics.length} topics</button>
             </div>
           ))}
         </div>
@@ -87,11 +87,11 @@ export default function Topics(){
       {/* Multi-select */}
       <div className="rounded-2xl glass border border-white/10 p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="font-semibold">Mix Topics</h3>
+          <h3 className="font-semibold">Bundle Topics</h3>
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400">{selectedTopics.length} selected</span>
             {selectedTopics.length>0 && <button onClick={clearSelection} className="text-xs px-3 py-1 rounded-full border border-white/10 hover:bg-white/5">Clear</button>}
-            <button onClick={generateMix} disabled={selectedTopics.length===0} className="text-xs px-4 py-1.5 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 text-white disabled:opacity-40">Generate Mix →</button>
+            <button onClick={generateBundle} disabled={selectedTopics.length===0} className="text-xs px-4 py-1.5 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 text-white disabled:opacity-40">Generate Bundle →</button>
           </div>
         </div>
 
@@ -112,7 +112,7 @@ export default function Topics(){
         </div>
 
         <div className="mt-4 flex gap-2">
-          <Link to="/learn?mix=recall" onClick={()=> { if(selectedTopics.length===0) { setSelectedTopics([]); setSelectedBundle(null)} }} className="flex-1 py-2.5 rounded-full glass border border-white/10 text-center text-sm hover:bg-white/5">Continue with {selectedTopics.length ? selectedTopics.join(', ') : 'All topics'} (mixed)</Link>
+          <Link to="/learn?bundle=recall" onClick={()=> { if(selectedTopics.length===0) { setSelectedTopics([]); setSelectedBundle(null)} }} className="flex-1 py-2.5 rounded-full glass border border-white/10 text-center text-sm hover:bg-white/5">Continue with {selectedTopics.length ? selectedTopics.join(', ') : 'All topics'} (bundled)</Link>
         </div>
       </div>
 

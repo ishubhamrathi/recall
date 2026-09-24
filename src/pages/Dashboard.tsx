@@ -23,7 +23,7 @@ export default function Dashboard(){
           <h1 className="text-2xl font-bold">Good morning, {user?.name ?? 'there'}</h1>
           <p className="text-slate-400 text-sm">Streak: {streak} days{selectedBundle ? ` • ${selectedBundle}` : selectedTopics.length ? ` • ${selectedTopics.join(', ')}` : ''}</p>
         </div>
-        <Link to="/learn?mix=recall" className="px-6 py-3 rounded-full bg-white text-slate-900 text-sm font-medium flex items-center gap-2">Resume Mix <ArrowUpRight className="w-4 h-4"/></Link>
+        <Link to="/learn?bundle=recall" className="px-6 py-3 rounded-full bg-white text-slate-900 text-sm font-medium flex items-center gap-2">Resume Bundle <ArrowUpRight className="w-4 h-4"/></Link>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

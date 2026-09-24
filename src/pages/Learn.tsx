@@ -337,7 +337,8 @@ function buildRecallQueue(arr: Question[]): Question[] {
 export default function Learn() {
   const { questions, toggleBookmark, updateConfidence, showToast, selectedTopics } = useApp()
   const location = useLocation()
-  const isMix = new URLSearchParams(location.search).get('mix') === 'recall'
+  const params = new URLSearchParams(location.search)
+  const isBundle = params.get('bundle') === 'recall' || params.get('mix') === 'recall' // support both
   const filteredBase = useMemo(()=> {
     if (!selectedTopics || selectedTopics.length===0) return questions
     return questions.filter(q=> selectedTopics.includes(q.topic as any))
@@ -350,10 +351,10 @@ export default function Learn() {
   const idleRef = useRef<number | null>(null)
   const difficultyFiltered = useMemo(()=> filter==='All' ? filteredBase : filteredBase.filter(q=>q.difficulty===filter), [filteredBase, filter])
   const list = useMemo(()=> {
-    if (!isMix) return difficultyFiltered
-    // recall mix: fresh + due interleaved, shuffled
+    if (!isBundle) return difficultyFiltered
+    // recall bundle: fresh + due interleaved, shuffled
     return buildRecallQueue(difficultyFiltered)
-  }, [difficultyFiltered, isMix])
+  }, [difficultyFiltered, isBundle])
   const q = list[idx % list.length]
   const next1 = list.length > 1 ? list[(idx + 1) % list.length] : null
   const next2 = list.length > 2 ? list[(idx + 2) % list.length] : null
@@ -378,7 +379,7 @@ export default function Learn() {
 
   useEffect(()=>{ shownAtRef.current = Date.now(); revealedAtRef.current = null; resetIdle() }, [q?.id, idx])
   useEffect(()=>{ resetIdle(); return () => { if (idleRef.current) window.clearTimeout(idleRef.current) } }, [])
-  useEffect(()=>{ setIdx(0); setRevealed(false) }, [isMix, filteredBase.length])
+  useEffect(()=>{ setIdx(0); setRevealed(false) }, [isBundle, filteredBase.length])
 
   const handleReveal = () => {
     if (!revealed) revealedAtRef.current = new Date().toISOString()
