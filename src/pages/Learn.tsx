@@ -272,52 +272,40 @@ function SwipeHintOverlay({ onDismiss }: { onDismiss: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm grid place-items-center p-6"
+      className="absolute inset-0 z-20 pointer-events-none flex items-center justify-between px-1 sm:px-2"
       onClick={onDismiss}
     >
-      <motion.div
-        initial={{ scale: 0.96, y: 8, opacity: 0 }}
-        animate={{ scale: 1, y: 0, opacity: 1 }}
-        exit={{ scale: 0.98, opacity: 0 }}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[420px] rounded-[24px] glass-strong border border-white/10 p-6 text-center"
+      {/* left blink */}
+      <motion.button
+        onClick={onDismiss}
+        animate={{ opacity: [0.4, 1, 0.4], x: [-3, -7, -3] }}
+        transition={{ duration: 1.1, repeat: Infinity }}
+        className="pointer-events-auto flex items-center gap-1.5 bg-black/55 backdrop-blur rounded-full pl-1 pr-2.5 py-1.5 border border-white/10 shadow-lg"
       >
-        <div className="text-sm font-semibold">Swipe to decide</div>
-        <p className="text-xs text-slate-400 mt-1">Drag the card or use buttons — no rush</p>
+        <span className="w-7 h-7 rounded-full bg-cyan-500/20 border border-cyan-500/30 grid place-items-center text-cyan-300 text-sm">←</span>
+        <span className="text-xs font-medium text-cyan-200 hidden sm:inline">Practice</span>
+      </motion.button>
 
-        {/* animated demo */}
-        <div className="relative mt-6 h-[140px] overflow-hidden rounded-2xl bg-white/[0.03] border border-white/10">
-          <div className="absolute inset-0 grid place-items-center">
-            <motion.div
-              animate={{ x: [-70, 70, -70] }}
-              transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut', repeatDelay: 0.6 }}
-              className="w-[160px] h-[92px] rounded-2xl bg-white text-slate-900 grid place-items-center text-xs font-medium shadow-xl border border-white"
-            >
-              Card
-            </motion.div>
-          </div>
-          {/* arrows */}
-          <motion.div animate={{ opacity: [0.4, 1, 0.4], x: [-2, -6, -2] }} transition={{ duration: 1.4, repeat: Infinity }} className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-cyan-300">
-            <span className="w-6 h-6 rounded-full bg-cyan-500/20 border border-cyan-500/30 grid place-items-center">←</span> Practice
-          </motion.div>
-          <motion.div animate={{ opacity: [0.4, 1, 0.4], x: [2, 6, 2] }} transition={{ duration: 1.4, repeat: Infinity, delay: 0.7 }} className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-emerald-300">
-            Know → <span className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/30 grid place-items-center">→</span>
-          </motion.div>
-        </div>
-
-        <div className="mt-5 grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-left">
-            <div className="font-medium">← Left</div>
-            <div className="text-slate-400">Need practice</div>
-          </div>
-          <div className="rounded-xl bg-white border border-white p-3 text-left text-slate-900">
-            <div className="font-medium">Right →</div>
-            <div className="text-slate-500">I know this</div>
-          </div>
-        </div>
-
-        <button onClick={onDismiss} className="mt-5 w-full py-2.5 rounded-full bg-white text-slate-900 text-sm font-medium">Got it</button>
+      {/* center hint */}
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="pointer-events-auto absolute left-1/2 -translate-x-1/2 bottom-4 bg-black/60 backdrop-blur rounded-full px-3 py-1.5 border border-white/10 text-[11px] text-slate-200 flex items-center gap-1.5 cursor-pointer"
+        onClick={onDismiss}
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-pulse" /> Swipe
       </motion.div>
+
+      {/* right blink */}
+      <motion.button
+        onClick={onDismiss}
+        animate={{ opacity: [0.4, 1, 0.4], x: [3, 7, 3] }}
+        transition={{ duration: 1.1, repeat: Infinity, delay: 0.55 }}
+        className="pointer-events-auto flex items-center gap-1.5 bg-black/55 backdrop-blur rounded-full pr-1 pl-2.5 py-1.5 border border-white/10 shadow-lg"
+      >
+        <span className="text-xs font-medium text-emerald-200 hidden sm:inline">Know</span>
+        <span className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/30 grid place-items-center text-emerald-300 text-sm">→</span>
+      </motion.button>
     </motion.div>
   )
 }
@@ -451,6 +439,9 @@ export default function Learn() {
           <AnimatePresence mode="wait">
             <QuestionCard key={q.id + String(idx)} q={q} revealed={revealed} dir={swipeDir} onReveal={handleReveal} onBookmark={()=>{toggleBookmark(q.id); showToast(q.bookmarked?'Removed bookmark':'Bookmarked 🔖')}} onSwipe={handleSwipe} />
           </AnimatePresence>
+          <AnimatePresence>
+            {showHint && <SwipeHintOverlay onDismiss={resetIdle} />}
+          </AnimatePresence>
         </div>
 
         <div className="mt-6 flex items-center gap-3">
@@ -471,9 +462,6 @@ export default function Learn() {
         </div>
         <button onClick={()=>{setIdx(0); setRevealed(false); resetIdle()}} className="mt-4 text-xs text-slate-400 flex items-center gap-1 hover:text-white"><RotateCcw className="w-3 h-3"/> Restart deck</button>
       </div>
-      <AnimatePresence>
-        {showHint && <SwipeHintOverlay onDismiss={resetIdle} />}
-      </AnimatePresence>
     </div>
   )
 }
