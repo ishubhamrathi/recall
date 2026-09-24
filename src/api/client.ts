@@ -88,6 +88,9 @@ export const recallApi = {
   streakDays: (days = 84) => request<{ data: { day: string; reviewsCount: number }[]; streak: number; longestStreak: number }>(`/api/recall/streak-days?days=${days}`),
   topics: () => request<{ name: string; count: number; color: string }[] | { data: any[] }>('/api/recall/topics'),
   topicBundles: () => request<{ id?: string; slug: string; name: string; description: string; topics: string[]; color: string; icon?: string; count?: number }[] | { data: any[] }>('/api/recall/topic-bundles'),
+  enrich: (body: { question: string; topic?: string; difficulty?: string }) => request<{ question: string; topic?: string; difficulty?: string; answer: string; explanation: string; source: string; sources?: string[]; generatedAt: string }>('/api/recall/enrich', { method: 'POST', body: JSON.stringify(body), errorContext: 'enrich' } as any),
+  enrichById: (id: string, persist = false) => request<{ question: string; topic?: string; difficulty?: string; answer: string; explanation: string; source: string; persisted?: boolean }>(`/api/recall/questions/${id}/enrich?persist=${persist}`, { method: 'POST', errorContext: 'enrichById' } as any),
+  enrichSearch: (q: string) => request<{ AbstractText?: string; AbstractURL?: string; RelatedTopics?: { Text: string }[] }>(`/api/recall/enrich/search?q=${encodeURIComponent(q)}`, { errorContext: 'enrichSearch' } as any),
   sessions: {
     create: () => request<any>('/api/recall/sessions', { method: 'POST' }),
     update: (id: string, body: Record<string, any>) => request<any>(`/api/recall/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),

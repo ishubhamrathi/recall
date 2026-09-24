@@ -6,6 +6,7 @@ import { useApp } from '@/store/AppContext'
 import { useLocation } from 'react-router-dom'
 import type { Question } from '@/data/mockData'
 import { GlossaryText } from '@/components/ui/glossary-text'
+import { recallApi } from '@/api/client'
 
 function ConfidenceBar({ score }: { score: number }) {
   const level = score < 25 ? 'New' : score < 50 ? 'Learning' : score < 80 ? 'Familiar' : 'Mastered'
@@ -157,6 +158,21 @@ function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: 
   const [editingNote, setEditingNote] = useState(false)
   const [draftNote, setDraftNote] = useState(note)
   useEffect(() => { setDraftNote(note); if (!note) setEditingNote(false) }, [note, q.id])
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiResult, setAiResult] = useState<{ answer: string; explanation?: string; source?: string } | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const handleAiEnrich = async () => {
+    setAiLoading(true); setAiError(null)
+    try {
+      const res: any = await recallApi.enrich({ question: q.question, topic: q.topic, difficulty: q.difficulty }).catch(() => recallApi.enrichById(q.id, false))
+      setAiResult(res)
+    } catch (e: any) {
+      const msg = e?.data?.error || e?.message || 'AI enrichment under maintenance — try again later'
+      // expected to fail without keys, show small maintenance error
+      setAiError(msg.includes('maintenance') ? msg : 'AI enrichment under maintenance — try again later')
+    } finally { setAiLoading(false) }
+  }
+  useEffect(() => { setAiResult(null); setAiError(null); setAiLoading(false) }, [q.id])
   const dragX = useMotionValue(0)
   const dragRotate = useTransform(dragX, [-180, 180], [-14, 14])
   return (
@@ -211,6 +227,28 @@ function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: 
                 <div className="text-xs font-semibold tracking-widest text-slate-400 uppercase">Answer — explain to interviewer</div>
                 <p className="mt-2 text-sm leading-relaxed text-slate-200">“{q.answer}”</p>
                 <p className="mt-2 text-[11px] text-slate-500">Say in 60–90s: what → why → how → trade-off. Keep it conversational.</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={handleAiEnrich}
+                    disabled={aiLoading}
+                    className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white disabled:opacity-50 hover:from-violet-500 hover:to-fuchsia-400 border border-white/10"
+                  >
+                    <Sparkles className="w-3 h-3" /> {aiLoading ? 'Generating…' : 'AI Answer'}
+                  </button>
+                  {aiError && <span className="text-[11px] text-amber-300">under maintenance</span>}
+                </div>
+                {aiError && (
+                  <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" /> AI enrichment under maintenance — try again later
+                  </div>
+                )}
+                {aiResult && (
+                  <div className="mt-3 rounded-xl bg-fuchsia-500/10 border border-fuchsia-500/20 p-3">
+                    <div className="text-[11px] font-medium tracking-widest text-fuchsia-300 uppercase flex items-center gap-1"><Sparkles className="w-3 h-3"/> AI Enriched {aiResult.source ? `• ${aiResult.source}` : ''}</div>
+                    <p className="mt-1.5 text-sm leading-relaxed text-fuchsia-100/90">{aiResult.answer}</p>
+                    {aiResult.explanation && <p className="mt-1.5 text-xs leading-relaxed text-slate-300"><GlossaryText text={aiResult.explanation} /></p>}
+                  </div>
+                )}
               </div>
               <div className="rounded-2xl bg-blue-500/10 border border-blue-500/20 p-4">
                 <div className="text-xs font-semibold tracking-widest text-blue-300 uppercase">Explanation — simple terms</div>
