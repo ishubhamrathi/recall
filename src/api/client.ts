@@ -16,8 +16,10 @@ async function request<T>(path: string, init: RequestInit & { errorContext?: str
     'Content-Type': 'application/json',
     ...(fetchInit.headers as Record<string, string> | undefined),
   }
-  // X-API-Key alternative for PROJECT clients
-  const apiKey = (import.meta.env.VITE_API_KEY as string | undefined) || localStorage.getItem('recall_api_key') || undefined
+  // X-API-Key for PROJECT clients — runtime only (localStorage), never baked via VITE_ prefix.
+  // Do NOT put secrets in VITE_ env (Vite inlines VITE_ vars into the browser bundle and they are public).
+  // If you need a key locally, set it via: localStorage.setItem('recall_api_key', '<key>') in browser console.
+  const apiKey = localStorage.getItem('recall_api_key') || undefined
   if (apiKey) headers['X-API-Key'] = apiKey
 
   let res: Response
