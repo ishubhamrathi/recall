@@ -222,7 +222,6 @@ function SwipeHintOverlay({ onDismiss }: { onDismiss: () => void }) {
         </div>
 
         <button onClick={onDismiss} className="mt-5 w-full py-2.5 rounded-full bg-white text-slate-900 text-sm font-medium">Got it</button>
-        <div className="mt-2 text-[11px] text-slate-500">Shows after 7s idle • drag, press arrow, or tap Got it</div>
       </motion.div>
     </motion.div>
   )
@@ -241,11 +240,20 @@ export default function Learn() {
   const shownAtRef = useRef<number>(Date.now())
   const revealedAtRef = useRef<string | null>(null)
 
+  // slower normal reading, not skimming: ~155 wpm + comprehension buffer, clamped 4.8s–12s
+  const getReadingDelayMs = (text: string) => {
+    const words = text.trim().split(/\s+/).filter(Boolean).length
+    const wpm = 155
+    const base = (words / wpm) * 60000
+    const withBuffer = base + 1800
+    return Math.min(12000, Math.max(4800, Math.ceil(withBuffer)))
+  }
+
   const resetIdle = () => {
     setShowHint(false)
     if (idleRef.current) window.clearTimeout(idleRef.current)
-    // show after 7s of no swipe
-    idleRef.current = window.setTimeout(() => setShowHint(true), 7000)
+    const delay = q?.question ? getReadingDelayMs(q.question) : 6000
+    idleRef.current = window.setTimeout(() => setShowHint(true), delay)
   }
 
   useEffect(()=>{ shownAtRef.current = Date.now(); revealedAtRef.current = null; resetIdle() }, [q?.id, idx])
