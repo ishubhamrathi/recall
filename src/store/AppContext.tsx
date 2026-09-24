@@ -30,6 +30,10 @@ type AppState = {
   setSearch: (s: string) => void
   selectedTopic: Topic | 'All'
   setSelectedTopic: (t: Topic | 'All') => void
+  selectedTopics: Topic[]
+  setSelectedTopics: (t: Topic[]) => void
+  selectedBundle: string | null
+  setSelectedBundle: (s: string | null) => void
   streak: number
   showToast: (msg: string) => void
   toast: string | null
@@ -53,7 +57,15 @@ const Ctx = createContext<AppState | null>(null)
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [questions, setQuestions] = useState<Question[]>([])
   const [search, setSearch] = useState('')
-  const [selectedTopic, setSelectedTopic] = useState<Topic | 'All'>('All')
+  const [selectedTopic, setSelectedTopic] = useState<Topic | 'All'>(() => {
+    try { const v = localStorage.getItem('recall_selectedTopic') as Topic | 'All' | null; return (v as any) || 'All' } catch { return 'All' }
+  })
+  const [selectedTopics, setSelectedTopics] = useState<Topic[]>(() => {
+    try { const raw = localStorage.getItem('recall_selectedTopics'); if (raw) return JSON.parse(raw); const single = localStorage.getItem('recall_selectedTopic'); if (single && single !== 'All') return [single as Topic]; return [] } catch { return [] }
+  })
+  const [selectedBundle, setSelectedBundle] = useState<string | null>(() => {
+    try { return localStorage.getItem('recall_selectedBundle') || null } catch { return null }
+  })
   const [toast, setToast] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<User | null>(null)
@@ -96,6 +108,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true }
   }, [])
   useEffect(() => { if (toast) { const t = setTimeout(()=>setToast(null), 2500); return ()=>clearTimeout(t)} }, [toast])
+  useEffect(() => { try { localStorage.setItem('recall_selectedTopic', selectedTopic) } catch {} }, [selectedTopic])
+  useEffect(() => { try { localStorage.setItem('recall_selectedTopics', JSON.stringify(selectedTopics)) } catch {} }, [selectedTopics])
+  useEffect(() => { try { if (selectedBundle) localStorage.setItem('recall_selectedBundle', selectedBundle); else localStorage.removeItem('recall_selectedBundle') } catch {} }, [selectedBundle])
+
+  // keep single ↔ multi in sync for backward compat
+  useEffect(() => {
+    if (selectedTopics.length === 0) setSelectedTopic('All')
+    else if (selectedTopics.length === 1) setSelectedTopic(selectedTopics[0])
+    else setSelectedTopic('All')
+  }, [selectedTopics])
 
   // notes: persist to localStorage (per-user key if logged in, fallback to shared)
   const notesKey = user ? `recall_notes_${user.id}` : 'recall_notes'
@@ -184,7 +206,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const hasAccess = () => true
   const showToast = (msg: string) => setToast(msg)
 
-  const value = useMemo(() => ({ questions, setQuestions, toggleBookmark, updateConfidence, search, setSearch, selectedTopic, setSelectedTopic, streak, toast, showToast, loading, user, login, register, signOut, logout, updateProfile, patchMetadata, patchLevel, hasAccess, notes, saveNote, deleteNote }), [questions, search, selectedTopic, toast, loading, user, streak, notes])
+  const value = useMemo(() => ({ questions, setQuestions, toggleBookmark, updateConfidence, search, setSearch, selectedTopic, setSelectedTopic, selectedTopics, setSelectedTopics, selectedBundle, setSelectedBundle, streak, toast, showToast, loading, user, login, register, signOut, logout, updateProfile, patchMetadata, patchLevel, hasAccess, notes, saveNote, deleteNote }), [questions, search, selectedTopic, selectedTopics, selectedBundle, toast, loading, user, streak, notes])
   return <Ctx.Provider value={value}>{children}
     {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 glass-strong px-5 py-3 rounded-full text-sm font-medium z-50 flex items-center gap-2 shadow-xl border border-white/10">
       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />{toast}

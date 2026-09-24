@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { recallApi } from '@/api/client'
 
 export default function Dashboard(){
-  const { questions, streak, user, loading } = useApp()
+  const { questions, streak, user, loading, selectedTopics, selectedBundle } = useApp()
   const [progress, setProgress] = useState<any>(null)
   useEffect(()=>{
     recallApi.progress().then(setProgress).catch(()=>{})
@@ -21,9 +21,9 @@ export default function Dashboard(){
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Good morning, {user?.name ?? 'there'}</h1>
-          <p className="text-slate-400 text-sm">Streak: {streak} days</p>
+          <p className="text-slate-400 text-sm">Streak: {streak} days{selectedBundle ? ` • ${selectedBundle}` : selectedTopics.length ? ` • ${selectedTopics.join(', ')}` : ''}</p>
         </div>
-        <Link to="/learn" className="px-6 py-3 rounded-full bg-white text-slate-900 text-sm font-medium flex items-center gap-2">Resume <ArrowUpRight className="w-4 h-4"/></Link>
+        <Link to="/learn?mix=recall" className="px-6 py-3 rounded-full bg-white text-slate-900 text-sm font-medium flex items-center gap-2">Resume Mix <ArrowUpRight className="w-4 h-4"/></Link>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion'
 import type { PanInfo } from 'framer-motion'
 import { Eye, Bookmark, X, Check, RotateCcw, Sparkles, ChevronLeft } from 'lucide-react'
 import { useApp } from '@/store/AppContext'
+import { useLocation } from 'react-router-dom'
 import type { Question } from '@/data/mockData'
 
 function ConfidenceBar({ score }: { score: number }) {
@@ -72,14 +73,17 @@ function AutoRevealButton({ title, revealed, onReveal }: { title: string; reveal
   if (revealed) return null
 
   return (
-    <div
-      className="mt-6 relative w-full group select-none"
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 6, transition: { duration: 0.2 } }}
+      className="mt-auto pt-6 relative w-full group select-none"
       onPointerDown={pause}
       onPointerUp={resume}
       onPointerLeave={resume}
       onPointerCancel={resume}
     >
-      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-600/40 to-cyan-500/40 blur-[14px] opacity-60 group-hover:opacity-80 pointer-events-none" />
+      <div className="absolute inset-0 top-6 rounded-full bg-gradient-to-r from-blue-600/40 to-cyan-500/40 blur-[14px] opacity-60 group-hover:opacity-80 pointer-events-none" />
       <button
         onClick={onReveal}
         onPointerDown={(e) => e.preventDefault()}
@@ -96,28 +100,34 @@ function AutoRevealButton({ title, revealed, onReveal }: { title: string; reveal
           <Eye className="w-4 h-4" /> Reveal Answer
         </span>
       </button>
-    </div>
+    </motion.div>
   )
 }
 
 function GhostCard({ q, depth }: { q: Question; depth: number }) {
   const scale = depth === 1 ? 0.97 : 0.94
   const y = depth === 1 ? 10 : 18
-  const opacity = depth === 1 ? 0.75 : 0.45
-  const rotate = depth === 1 ? -0.8 : 0.8
+  const opacity = depth === 1 ? 0.62 : 0.32
+  const rotate = depth === 1 ? -0.7 : 0.7
+  const blur = depth === 1 ? 'blur(0px)' : 'blur(1.2px)'
   return (
-    <div
-      className="absolute inset-0 rounded-[28px] glass border border-white/10 shadow-xl overflow-hidden pointer-events-none"
-      style={{ transform: `translateY(${y}px) scale(${scale}) rotate(${rotate}deg)`, opacity }}
+    <motion.div
+      initial={{ y: y + 8, scale: scale * 0.98, opacity: 0 }}
+      animate={{ y, scale, opacity, rotate: `${rotate}deg` }}
+      transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+      className="absolute inset-0 rounded-[28px] glass border border-white/[0.07] shadow-xl overflow-hidden pointer-events-none will-change-transform"
+      style={{ filter: blur }}
     >
+      <div className="absolute inset-0 bg-gradient-to-b from-white/[0.02] to-transparent pointer-events-none" />
       <div className="p-6 lg:p-7">
         <div className="flex items-center gap-2">
           <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-400 text-xs">{q.topic}</span>
           <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-500 text-xs">{q.difficulty}</span>
         </div>
         <div className="mt-6 text-[15px] font-medium leading-snug text-slate-300 line-clamp-3">{q.question}</div>
+        <div className="mt-3 h-1.5 rounded-full bg-white/10 overflow-hidden max-w-[80%]"><div className="h-full bg-white/20" style={{ width: '38%' }} /></div>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -128,12 +138,17 @@ function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: 
   const [editingNote, setEditingNote] = useState(false)
   const [draftNote, setDraftNote] = useState(note)
   useEffect(() => { setDraftNote(note); if (!note) setEditingNote(false) }, [note, q.id])
+  const dragX = useMotionValue(0)
+  const dragRotate = useTransform(dragX, [-180, 180], [-14, 14])
   return (
     <motion.div
       drag
       dragConstraints={{left:0,right:0,top:0,bottom:0}}
       dragElastic={0.55}
+      style={{ originX: 0.5, originY: 1, x: dragX, rotate: dragRotate }}
+      onDrag={(_, info) => dragX.set(info.offset.x)}
       onDragEnd={(_, info: PanInfo) => {
+        dragX.set(0)
         if (info.offset.x > 110) onSwipe('right')
         else if (info.offset.x < -110) onSwipe('left')
         else if (info.offset.y < -110) onSwipe('up')
@@ -141,11 +156,10 @@ function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: 
       initial={{scale:0.96, opacity:0, y:16}}
       animate={{scale:1, opacity:1, y:0, x:0, rotate:0, transition:{type:'spring', stiffness:380, damping:28}}}
       exit={
-        dir === 'left' ? { x: -520, y: 28, rotate: -18, opacity: 0, transition: { duration: 0.36, ease: [0.4, 0, 0.2, 1] as any } } :
-        dir === 'up' ? { y: -520, x: 0, rotate: 0, scale: 0.9, opacity: 0, transition: { duration: 0.32 } } :
-        { x: 520, y: 28, rotate: 18, opacity: 0, transition: { duration: 0.36, ease: [0.4, 0, 0.2, 1] as any } }
+        dir === 'left' ? { x: -560, y: 24, rotate: -18, opacity: 0, transition: { duration: 0.38, ease: [0.4, 0, 0.2, 1] as any } } :
+        dir === 'up' ? { y: -560, x: 0, rotate: 0, scale: 0.9, opacity: 0, transition: { duration: 0.32 } } :
+        { x: 560, y: 24, rotate: 18, opacity: 0, transition: { duration: 0.38, ease: [0.4, 0, 0.2, 1] as any } }
       }
-      style={{ originX: 0.5, originY: 1 }}
       className="absolute inset-0 rounded-[28px] glass-strong border border-white/10 shadow-2xl overflow-hidden select-none flex flex-col min-h-[560px] will-change-transform"
     >
       <div className="absolute inset-0 pointer-events-none">
@@ -305,16 +319,50 @@ function SwipeHintOverlay({ onDismiss }: { onDismiss: () => void }) {
   )
 }
 
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]] }
+  return a
+}
+function buildRecallQueue(arr: Question[]): Question[] {
+  const fresh = arr.filter(q => q.reviewCount === 0)
+  const due = arr.filter(q => q.reviewCount > 0 && q.confidenceScore < 45)
+  const learning = arr.filter(q => q.reviewCount > 0 && q.confidenceScore >= 45 && q.confidenceScore < 80)
+  const mastered = arr.filter(q => q.confidenceScore >= 80)
+  const sFresh = shuffle(fresh), sDue = shuffle(due), sLearning = shuffle(learning), sMastered = shuffle(mastered)
+  const out: Question[] = []
+  let iF=0,iD=0,iL=0,iM=0
+  // round-robin: due > fresh > learning > mastered (40/30/20/10 feel)
+  while (out.length < arr.length) {
+    if (iD < sDue.length) out.push(sDue[iD++])
+    if (out.length < arr.length && iF < sFresh.length) out.push(sFresh[iF++])
+    if (out.length < arr.length && iL < sLearning.length) out.push(sLearning[iL++])
+    if (out.length < arr.length && iM < sMastered.length) out.push(sMastered[iM++])
+    if (iD>=sDue.length && iF>=sFresh.length && iL>=sLearning.length && iM>=sMastered.length) break
+  }
+  return out.length ? out : shuffle(arr)
+}
+
 export default function Learn() {
-  const { questions, toggleBookmark, updateConfidence, showToast, selectedTopic } = useApp()
-  const filtered = useMemo(()=> selectedTopic==='All' ? questions : questions.filter(q=>q.topic===selectedTopic), [questions, selectedTopic])
+  const { questions, toggleBookmark, updateConfidence, showToast, selectedTopics } = useApp()
+  const location = useLocation()
+  const isMix = new URLSearchParams(location.search).get('mix') === 'recall'
+  const filteredBase = useMemo(()=> {
+    if (!selectedTopics || selectedTopics.length===0) return questions
+    return questions.filter(q=> selectedTopics.includes(q.topic as any))
+  }, [questions, selectedTopics])
   const [idx, setIdx] = useState(0)
   const [revealed, setRevealed] = useState(false)
   const [filter, setFilter] = useState<'All'|'Easy'|'Medium'|'Hard'>('All')
   const [showHint, setShowHint] = useState(false)
   const [swipeDir, setSwipeDir] = useState<'left'|'right'|'up'|null>(null)
   const idleRef = useRef<number | null>(null)
-  const list = useMemo(()=> filter==='All' ? filtered : filtered.filter(q=>q.difficulty===filter), [filtered, filter])
+  const difficultyFiltered = useMemo(()=> filter==='All' ? filteredBase : filteredBase.filter(q=>q.difficulty===filter), [filteredBase, filter])
+  const list = useMemo(()=> {
+    if (!isMix) return difficultyFiltered
+    // recall mix: fresh + due interleaved, shuffled
+    return buildRecallQueue(difficultyFiltered)
+  }, [difficultyFiltered, isMix])
   const q = list[idx % list.length]
   const next1 = list.length > 1 ? list[(idx + 1) % list.length] : null
   const next2 = list.length > 2 ? list[(idx + 2) % list.length] : null
@@ -339,6 +387,7 @@ export default function Learn() {
 
   useEffect(()=>{ shownAtRef.current = Date.now(); revealedAtRef.current = null; resetIdle() }, [q?.id, idx])
   useEffect(()=>{ resetIdle(); return () => { if (idleRef.current) window.clearTimeout(idleRef.current) } }, [])
+  useEffect(()=>{ setIdx(0); setRevealed(false) }, [isMix, filteredBase.length])
 
   const handleReveal = () => {
     if (!revealed) revealedAtRef.current = new Date().toISOString()

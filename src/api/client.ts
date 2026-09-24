@@ -87,6 +87,7 @@ export const recallApi = {
   progress: () => request<{ streak: number; longestStreak: number; totalReviews: number; mastered: number; familiar: number; learning: number; new: number; byTopic: any[]; weekly: any[]; heatmap: any[] }>('/api/recall/progress'),
   streakDays: (days = 84) => request<{ data: { day: string; reviewsCount: number }[]; streak: number; longestStreak: number }>(`/api/recall/streak-days?days=${days}`),
   topics: () => request<{ name: string; count: number; color: string }[] | { data: any[] }>('/api/recall/topics'),
+  topicBundles: () => request<{ id?: string; slug: string; name: string; description: string; topics: string[]; color: string; icon?: string; count?: number }[] | { data: any[] }>('/api/recall/topic-bundles'),
   sessions: {
     create: () => request<any>('/api/recall/sessions', { method: 'POST' }),
     update: (id: string, body: Record<string, any>) => request<any>(`/api/recall/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
