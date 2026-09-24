@@ -100,22 +100,48 @@ function AutoRevealButton({ title, revealed, onReveal }: { title: string; reveal
   )
 }
 
-function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe }: { q: Question; revealed:boolean; onReveal:()=>void; onBookmark:()=>void; onSwipe:(dir:'left'|'right'|'up')=>void }) {
+function GhostCard({ q, depth }: { q: Question; depth: number }) {
+  const scale = depth === 1 ? 0.97 : 0.94
+  const y = depth === 1 ? 10 : 18
+  const opacity = depth === 1 ? 0.75 : 0.45
+  const rotate = depth === 1 ? -0.8 : 0.8
+  return (
+    <div
+      className="absolute inset-0 rounded-[28px] glass border border-white/10 shadow-xl overflow-hidden pointer-events-none"
+      style={{ transform: `translateY(${y}px) scale(${scale}) rotate(${rotate}deg)`, opacity }}
+    >
+      <div className="p-6 lg:p-7">
+        <div className="flex items-center gap-2">
+          <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-400 text-xs">{q.topic}</span>
+          <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-500 text-xs">{q.difficulty}</span>
+        </div>
+        <div className="mt-6 text-[15px] font-medium leading-snug text-slate-300 line-clamp-3">{q.question}</div>
+      </div>
+    </div>
+  )
+}
+
+function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: Question; revealed:boolean; onReveal:()=>void; onBookmark:()=>void; onSwipe:(dir:'left'|'right'|'up')=>void; dir?: 'left'|'right'|'up'|null }) {
   const diffColor = q.difficulty==='Easy' ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/15' : q.difficulty==='Medium' ? 'text-amber-300 border-amber-500/30 bg-amber-500/15' : 'text-red-300 border-red-500/30 bg-red-500/15'
   return (
     <motion.div
       drag
       dragConstraints={{left:0,right:0,top:0,bottom:0}}
-      dragElastic={0.6}
+      dragElastic={0.55}
       onDragEnd={(_, info: PanInfo) => {
-        if (info.offset.x > 120) onSwipe('right')
-        else if (info.offset.x < -120) onSwipe('left')
-        else if (info.offset.y < -120) onSwipe('up')
+        if (info.offset.x > 110) onSwipe('right')
+        else if (info.offset.x < -110) onSwipe('left')
+        else if (info.offset.y < -110) onSwipe('up')
       }}
-      initial={{scale:0.96, opacity:0}}
-      animate={{scale:1, opacity:1}}
-      exit={{x: q ? 400 : 0, opacity:0, rotate: 8, transition:{duration:0.25}}}
-      className="w-full max-w-[560px] mx-auto rounded-[28px] glass-strong border border-white/10 shadow-2xl overflow-hidden relative select-none flex flex-col min-h-[560px]"
+      initial={{scale:0.96, opacity:0, y:16}}
+      animate={{scale:1, opacity:1, y:0, x:0, rotate:0, transition:{type:'spring', stiffness:380, damping:28}}}
+      exit={
+        dir === 'left' ? { x: -520, y: 28, rotate: -18, opacity: 0, transition: { duration: 0.36, ease: [0.4, 0, 0.2, 1] as any } } :
+        dir === 'up' ? { y: -520, x: 0, rotate: 0, scale: 0.9, opacity: 0, transition: { duration: 0.32 } } :
+        { x: 520, y: 28, rotate: 18, opacity: 0, transition: { duration: 0.36, ease: [0.4, 0, 0.2, 1] as any } }
+      }
+      style={{ originX: 0.5, originY: 1 }}
+      className="absolute inset-0 rounded-[28px] glass-strong border border-white/10 shadow-2xl overflow-hidden select-none flex flex-col min-h-[560px] will-change-transform"
     >
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute -top-20 -right-20 w-64 h-64 bg-blue-600/15 blur-[50px] rounded-full" />
@@ -234,9 +260,12 @@ export default function Learn() {
   const [revealed, setRevealed] = useState(false)
   const [filter, setFilter] = useState<'All'|'Easy'|'Medium'|'Hard'>('All')
   const [showHint, setShowHint] = useState(false)
+  const [swipeDir, setSwipeDir] = useState<'left'|'right'|'up'|null>(null)
   const idleRef = useRef<number | null>(null)
   const list = useMemo(()=> filter==='All' ? filtered : filtered.filter(q=>q.difficulty===filter), [filtered, filter])
   const q = list[idx % list.length]
+  const next1 = list.length > 1 ? list[(idx + 1) % list.length] : null
+  const next2 = list.length > 2 ? list[(idx + 2) % list.length] : null
   const shownAtRef = useRef<number>(Date.now())
   const revealedAtRef = useRef<string | null>(null)
 
@@ -285,8 +314,13 @@ export default function Learn() {
     const meta = { revealedAt: revealedAtRef.current ?? undefined, durationMs }
     if(dir==='right'){ updateConfidence(q.id, +18, meta); showToast('Marked as Known')}
     if(dir==='left'){ updateConfidence(q.id, -12, meta); showToast('Needs practice')}
+    setSwipeDir(dir)
     setRevealed(false)
-    setIdx(i=> (i+1) % list.length)
+    // let card fly off with bottom pivot, then advance deck (magician endless)
+    setTimeout(() => {
+      setIdx(i=> (i+1) % list.length)
+      setSwipeDir(null)
+    }, 320)
   }
 
   if(!q) return <div className="text-center py-20 text-slate-400">No questions for this filter.</div>
@@ -306,21 +340,29 @@ export default function Learn() {
         ))}
       </div>
 
-      <div className="mt-8 relative min-h-[600px] flex flex-col items-center">
-        <AnimatePresence mode="wait">
-          <QuestionCard key={q.id + String(idx)} q={q} revealed={revealed} onReveal={handleReveal} onBookmark={()=>{toggleBookmark(q.id); showToast(q.bookmarked?'Removed bookmark':'Bookmarked 🔖')}} onSwipe={handleSwipe} />
-        </AnimatePresence>
+      <div className="mt-8 relative min-h-[640px] flex flex-col items-center">
+        <div className="relative w-full max-w-[560px] h-[560px]">
+          {next2 && <GhostCard q={next2} depth={2} />}
+          {next1 && <GhostCard q={next1} depth={1} />}
+          <AnimatePresence mode="wait">
+            <QuestionCard key={q.id + String(idx)} q={q} revealed={revealed} dir={swipeDir} onReveal={handleReveal} onBookmark={()=>{toggleBookmark(q.id); showToast(q.bookmarked?'Removed bookmark':'Bookmarked 🔖')}} onSwipe={handleSwipe} />
+          </AnimatePresence>
+        </div>
 
         <div className="mt-6 flex items-center gap-3">
           <button onClick={()=>handleSwipe('left')} className="w-14 h-14 rounded-full glass border border-white/10 grid place-items-center hover:bg-white/10 group">
             <X className="w-6 h-6 text-slate-400 group-hover:text-cyan-400" />
           </button>
           <button onClick={()=> revealed ? setRevealed(false) : handleReveal()} className="px-6 py-3 rounded-full glass border border-white/10 text-sm hover:bg-white/10"> {revealed?'Hide':'Reveal'} </button>
-          <button onClick={()=>handleSwipe('right')} className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 grid place-items-center shadow-lg shadow-blue-500/20 hover:scale-105 transition-transform">
+           <button onClick={()=>handleSwipe('right')} className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 grid place-items-center shadow-lg shadow-blue-500/20 hover:scale-105 transition-transform">
             <Check className="w-6 h-6 text-white" />
           </button>
-          <button onClick={()=>handleSwipe('up')} className="w-14 h-14 rounded-full glass border border-white/10 grid place-items-center hover:bg-amber-500/20">
-            <Bookmark className="w-5 h-5 text-slate-400" />
+          <button
+            onClick={()=>handleSwipe('up')}
+            aria-pressed={q.bookmarked}
+            className={`w-14 h-14 rounded-full grid place-items-center border transition-colors ${q.bookmarked ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20' : 'glass border-white/10 text-slate-400 hover:bg-amber-500/20 hover:text-amber-300 hover:border-amber-500/30'}`}
+          >
+            <Bookmark className={`w-5 h-5 ${q.bookmarked ? 'fill-white text-white' : ''}`} />
           </button>
         </div>
         <button onClick={()=>{setIdx(0); setRevealed(false); resetIdle()}} className="mt-4 text-xs text-slate-400 flex items-center gap-1 hover:text-white"><RotateCcw className="w-3 h-3"/> Restart deck</button>
