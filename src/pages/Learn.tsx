@@ -69,10 +69,6 @@ function AutoRevealButton({ title, revealed, onReveal }: { title: string; reveal
     setIsPaused(false)
   }
 
-  const perimeter = 1000
-  const offset = perimeter - (perimeter * progress) / 100
-  const remaining = Math.max(0, (duration - (duration * progress) / 100) / 1000)
-
   if (revealed) return null
 
   return (
@@ -83,29 +79,23 @@ function AutoRevealButton({ title, revealed, onReveal }: { title: string; reveal
       onPointerLeave={resume}
       onPointerCancel={resume}
     >
-      {/* glow behind */}
-      <div className={`absolute inset-0 rounded-full bg-gradient-to-r from-blue-600/40 to-cyan-500/40 blur-[14px] transition-opacity ${isPaused ? 'opacity-30' : 'opacity-60 group-hover:opacity-80'}`} />
-      {/* outline loader - white border left→right */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 400 52" preserveAspectRatio="none" aria-hidden>
-        <rect x="1.5" y="1.5" width="397" height="49" rx="24.5" ry="24.5" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" />
-        <rect x="1.5" y="1.5" width="397" height="49" rx="24.5" ry="24.5" fill="none" stroke={isPaused ? 'rgba(255,255,255,0.45)' : 'white'} strokeWidth="2.2" strokeLinecap="round" strokeDasharray={`${perimeter}`} strokeDashoffset={`${offset}`} style={{ transition: isPaused ? 'none' : 'stroke-dashoffset 0.12s linear' }} />
-      </svg>
+      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-600/40 to-cyan-500/40 blur-[14px] opacity-60 group-hover:opacity-80 pointer-events-none" />
       <button
         onClick={onReveal}
         onPointerDown={(e) => e.preventDefault()}
-        className={`relative w-full py-[14px] rounded-full font-medium flex items-center justify-center gap-2 transition-all ${isPaused ? 'bg-white/10 text-white border border-white/20' : 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:shadow-[0_0_30px_rgba(59,130,246,0.35)]'}`}
+        className="relative w-full py-[14px] rounded-full font-medium flex items-center justify-center gap-2 overflow-hidden bg-white/[0.06] border border-white/10 text-white hover:bg-white/[0.08] transition-colors"
       >
-        <span className="flex items-center gap-2">
-          <Eye className={`w-4 h-4 ${isPaused ? 'opacity-60' : ''}`} /> {isPaused ? 'Paused — hold released to resume' : 'Reveal Answer'}
-          <span className="ml-1 text-[11px] opacity-90 border border-white/30 px-2 py-0.5 rounded-full bg-white/10 hidden sm:inline">Space</span>
-        </span>
-        <span className="absolute right-4 text-[11px] font-mono bg-black/25 px-2 py-1 rounded-full border border-white/10 tabular-nums">
-          {isPaused ? '⏸ ' : ''}{remaining.toFixed(1)}s
+        {/* left-to-right fill */}
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-600 to-cyan-500 pointer-events-none"
+          style={{ width: `${progress}%`, transition: isPaused ? 'none' : 'width 0.12s linear' }}
+        />
+        <span className="absolute inset-0 rounded-full border border-white/0 pointer-events-none" />
+        <span className="relative flex items-center gap-2">
+          <Eye className="w-4 h-4" /> Reveal Answer
         </span>
       </button>
-      <div className="mt-2 text-center text-[11px] text-slate-500">
-        {isPaused ? 'Holding — release to continue' : `Auto-revealing in ${remaining.toFixed(1)}s • hold button to pause`}
-      </div>
     </div>
   )
 }
