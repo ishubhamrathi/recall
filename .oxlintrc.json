@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "categories": {
+    "correctness": "warn",
+    "suspicious": "warn",
+    "pedantic": "off",
+    "perf": "off",
+    "style": "off",
+    "restriction": "off"
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": "off",
+    "react/set-state-in-effect": "off",
+    "react/purity": "off",
+    "react/immutability": "off",
+    "react-hooks/exhaustive-deps": "off",
+    "react/react-in-jsx-scope": "off",
+    "react/memo-dependencies": "off",
+    "react/exhaustive-effect-dependencies": "off"
+  }
+}
