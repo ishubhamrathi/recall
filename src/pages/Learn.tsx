@@ -108,25 +108,43 @@ function AutoRevealButton({ title, revealed, onReveal }: { title: string; reveal
 function GhostCard({ q, depth }: { q: Question; depth: number }) {
   const scale = depth === 1 ? 0.97 : 0.94
   const y = depth === 1 ? 10 : 18
-  const opacity = depth === 1 ? 0.62 : 0.32
-  const rotate = depth === 1 ? -0.7 : 0.7
-  const blur = depth === 1 ? 'blur(0px)' : 'blur(1.2px)'
+  const opacity = depth === 1 ? 0.55 : 0.32
+  const rotate = depth === 1 ? -0.6 : 0.6
+  const blur = depth === 1 ? 'blur(0.6px)' : 'blur(1.6px)'
   return (
     <motion.div
-      initial={{ y: y + 8, scale: scale * 0.98, opacity: 0 }}
+      initial={{ y: y + 10, scale: scale * 0.97, opacity: 0 }}
       animate={{ y, scale, opacity, rotate: `${rotate}deg` }}
-      transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-      className="absolute inset-0 rounded-[28px] glass border border-white/[0.07] shadow-xl overflow-hidden pointer-events-none will-change-transform"
+      transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+      className="absolute inset-0 rounded-[28px] glass-strong border border-white/[0.06] shadow-xl overflow-hidden pointer-events-none will-change-transform flex flex-col"
       style={{ filter: blur }}
     >
-      <div className="absolute inset-0 bg-gradient-to-b from-white/[0.02] to-transparent pointer-events-none" />
-      <div className="p-6 lg:p-7">
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-400 text-xs">{q.topic}</span>
-          <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-500 text-xs">{q.difficulty}</span>
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute -top-20 -right-20 w-64 h-64 bg-blue-600/10 blur-[50px] rounded-full" />
+        <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-cyan-500/5 blur-[50px] rounded-full" />
+      </div>
+      <div className="relative p-6 lg:p-7 flex flex-col flex-1 min-h-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-500 text-xs">{q.topic}</span>
+            <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-600 text-xs">{q.difficulty}</span>
+          </div>
+          <div className="w-9 h-9 rounded-full glass border border-white/10 opacity-50" />
         </div>
-        <div className="mt-6 text-[15px] font-medium leading-snug text-slate-300 line-clamp-3">{q.question}</div>
-        <div className="mt-3 h-1.5 rounded-full bg-white/10 overflow-hidden max-w-[80%]"><div className="h-full bg-white/20" style={{ width: '38%' }} /></div>
+        <div className="mt-6 space-y-2.5">
+          <div className="h-[22px] rounded-lg bg-white/10 w-[92%]" />
+          <div className="h-[22px] rounded-lg bg-white/10 w-[78%]" />
+          <div className="h-[22px] rounded-lg bg-white/10 w-[64%] opacity-60" />
+        </div>
+        <div className="mt-4 flex gap-2">
+          <div className="h-5 w-16 rounded-full bg-white/5 border border-white/10" />
+          <div className="h-5 w-20 rounded-full bg-white/5 border border-white/10" />
+          <div className="h-5 w-12 rounded-full bg-white/5 border border-white/10" />
+        </div>
+        <div className="mt-auto pt-6">
+          <div className="h-10 rounded-full bg-white/[0.04] border border-white/5" />
+        </div>
+        <div className="mt-6 h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-white/10" style={{ width: '38%' }} /></div>
       </div>
     </motion.div>
   )
