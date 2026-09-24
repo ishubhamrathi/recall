@@ -123,6 +123,11 @@ function GhostCard({ q, depth }: { q: Question; depth: number }) {
 
 function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: Question; revealed:boolean; onReveal:()=>void; onBookmark:()=>void; onSwipe:(dir:'left'|'right'|'up')=>void; dir?: 'left'|'right'|'up'|null }) {
   const diffColor = q.difficulty==='Easy' ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/15' : q.difficulty==='Medium' ? 'text-amber-300 border-amber-500/30 bg-amber-500/15' : 'text-red-300 border-red-500/30 bg-red-500/15'
+  const { notes, saveNote, deleteNote, showToast } = useApp()
+  const note = notes[q.id] || ''
+  const [editingNote, setEditingNote] = useState(false)
+  const [draftNote, setDraftNote] = useState(note)
+  useEffect(() => { setDraftNote(note); if (!note) setEditingNote(false) }, [note, q.id])
   return (
     <motion.div
       drag
@@ -187,7 +192,54 @@ function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: 
                   {q.followUps.map(f=><li key={f} className="text-sm text-slate-400 flex gap-2"><span className="text-cyan-400">•</span>{f}</li>)}
                 </ul>
               </div>
+              <div className="rounded-2xl bg-violet-500/10 border border-violet-500/20 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold tracking-widest text-violet-300 uppercase flex items-center gap-2"><Sparkles className="w-3 h-3"/> My Note</div>
+                  {note && !editingNote && (
+                    <div className="flex gap-1">
+                      <button onClick={() => { setDraftNote(note); setEditingNote(true) }} className="text-[11px] px-2 py-1 rounded-full bg-white/10 border border-white/10 hover:bg-white/15">Edit</button>
+                      <button onClick={() => { deleteNote(q.id); showToast('Note removed') }} className="text-[11px] px-2 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-red-500/20 hover:text-red-300">Delete</button>
+                    </div>
+                  )}
+                </div>
+                {!editingNote ? (
+                  note ? (
+                    <p className="mt-2 text-sm leading-relaxed text-slate-200 whitespace-pre-wrap">{note}</p>
+                  ) : (
+                    <button onClick={() => setEditingNote(true)} className="mt-2 w-full py-2 rounded-xl border border-dashed border-violet-500/30 bg-white/[0.02] text-xs text-violet-300 hover:bg-violet-500/10 hover:border-violet-500/40">+ Add personal note for later</button>
+                  )
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    <textarea
+                      value={draftNote}
+                      onChange={e => setDraftNote(e.target.value)}
+                      placeholder="Add your trick, shortcut, or reminder for later..."
+                      rows={3}
+                      className="w-full px-3 py-2 rounded-xl bg-[#0B1020] border border-violet-500/30 outline-none text-sm placeholder:text-slate-500 focus:border-violet-500/50 resize-none"
+                      autoFocus
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => { setEditingNote(false); setDraftNote(note) }} className="px-3 py-1.5 rounded-full text-xs border border-white/10 hover:bg-white/5">Cancel</button>
+                      <button
+                        onClick={() => {
+                          if (!draftNote.trim()) { deleteNote(q.id); showToast('Note removed') }
+                          else { saveNote(q.id, draftNote); showToast(note ? 'Note updated' : 'Note saved') }
+                          setEditingNote(false)
+                        }}
+                        className="px-3 py-1.5 rounded-full text-xs bg-violet-600 text-white hover:bg-violet-500"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </motion.div>
+          )}
+          {!revealed && note && (
+            <div className="mt-3 flex items-center gap-1.5 text-[11px] text-violet-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />Note saved
+            </div>
           )}
         </div>
 

@@ -43,6 +43,9 @@ type AppState = {
   patchMetadata: (metadata: Record<string, unknown>) => Promise<User>
   patchLevel: (level: string) => Promise<User>
   hasAccess: () => boolean
+  notes: Record<string, string>
+  saveNote: (questionId: string, text: string) => void
+  deleteNote: (questionId: string) => void
 }
 
 const Ctx = createContext<AppState | null>(null)
@@ -55,6 +58,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<User | null>(null)
   const [streak, setStreak] = useState(0)
+  const [notes, setNotes] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem('recall_notes') || '{}') } catch { return {} }
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -90,6 +96,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true }
   }, [])
   useEffect(() => { if (toast) { const t = setTimeout(()=>setToast(null), 2500); return ()=>clearTimeout(t)} }, [toast])
+
+  // notes: persist to localStorage (per-user key if logged in, fallback to shared)
+  const notesKey = user ? `recall_notes_${user.id}` : 'recall_notes'
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(notesKey)
+      if (raw) setNotes(JSON.parse(raw))
+      else if (!user) {
+        const shared = localStorage.getItem('recall_notes')
+        if (shared) setNotes(JSON.parse(shared))
+      } else setNotes({})
+    } catch { setNotes({}) }
+  }, [notesKey])
+  useEffect(() => {
+    try { localStorage.setItem(notesKey, JSON.stringify(notes)); if (!user) localStorage.setItem('recall_notes', JSON.stringify(notes)) } catch {}
+  }, [notes, notesKey])
+
+  const saveNote = (questionId: string, text: string) => {
+    const t = text.trim()
+    setNotes(prev => {
+      if (!t) { const { [questionId]: _omit, ...rest } = prev; return rest }
+      return { ...prev, [questionId]: t }
+    })
+  }
+  const deleteNote = (questionId: string) => {
+    setNotes(prev => { const { [questionId]: _omit, ...rest } = prev; return rest })
+  }
 
   const toggleBookmark = (id: string) => {
     // optimistic local
@@ -151,7 +184,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const hasAccess = () => true
   const showToast = (msg: string) => setToast(msg)
 
-  const value = useMemo(() => ({ questions, setQuestions, toggleBookmark, updateConfidence, search, setSearch, selectedTopic, setSelectedTopic, streak, toast, showToast, loading, user, login, register, signOut, logout, updateProfile, patchMetadata, patchLevel, hasAccess }), [questions, search, selectedTopic, toast, loading, user, streak])
+  const value = useMemo(() => ({ questions, setQuestions, toggleBookmark, updateConfidence, search, setSearch, selectedTopic, setSelectedTopic, streak, toast, showToast, loading, user, login, register, signOut, logout, updateProfile, patchMetadata, patchLevel, hasAccess, notes, saveNote, deleteNote }), [questions, search, selectedTopic, toast, loading, user, streak, notes])
   return <Ctx.Provider value={value}>{children}
     {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 glass-strong px-5 py-3 rounded-full text-sm font-medium z-50 flex items-center gap-2 shadow-xl border border-white/10">
       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />{toast}
