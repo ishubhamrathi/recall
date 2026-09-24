@@ -1,0 +1,41 @@
+export const GLOSSARY: Record<string, string> = {
+  // LLM / AI
+  'RAG': 'Retrieval-Augmented Generation — add external docs to the LLM prompt at query time (no weight change), good for fresh/private data',
+  'retrieval-augmented generation': 'Retrieval-Augmented Generation (RAG) — fetch relevant docs, then let LLM answer grounded in them',
+  'fine-tuning': 'Fine-tuning — continue training the model on your examples to bake knowledge into weights; best for style/format or stable domain',
+  'fine tuning': 'Fine-tuning — continue training the model on your examples to bake knowledge into weights',
+  'LLM': 'Large Language Model — model trained on vast text to predict/generate language (e.g. GPT, Claude)',
+  'large language model': 'Large Language Model (LLM) — model trained on vast text',
+  'embedding': 'Embedding — numeric vector for text so similarity can be computed',
+  'vector database': 'Vector database — stores embeddings for fast similarity search (e.g. for RAG)',
+  'prompt': 'Prompt — input text you give the LLM to steer its answer',
+  // Concurrency / Java
+  'concurrency': 'Concurrency — many tasks interleaved on shared resources; contrast parallelism (truly simultaneous)',
+  'parallelism': 'Parallelism — tasks run literally at the same time on multiple cores',
+  'thread': 'Thread — lightweight unit of execution inside a process',
+  'process': 'Process — running program with its own memory',
+  'HashMap': 'HashMap — Java map, not thread-safe, one null key/value allowed',
+  'ConcurrentHashMap': 'ConcurrentHashMap — Java thread-safe map for concurrent access (segment-level locking)',
+  'synchronized': 'Synchronized — Java keyword to make a block/method thread-safe via a lock',
+  'volatile': 'Volatile — ensures a field’s value is always read from main memory, not a thread cache',
+  // System Design / DB / Network / OS
+  'throughput': 'Throughput — operations or bytes per second the system handles',
+  'latency': 'Latency — time for one operation to complete',
+  'availability': 'Availability — fraction of time system is usable',
+  'consistency': 'Consistency — all readers see the same up-to-date data (CAP)',
+  'sharding': 'Sharding — split data across machines by key',
+  'replication': 'Replication — copy data to multiple nodes for durability/availability',
+  'index': 'Index — auxiliary structure to find rows faster (like a book index)',
+  'ACID': 'ACID — Atomicity, Consistency, Isolation, Durability (transaction guarantees)',
+  'CAP': 'CAP — Consistency, Availability, Partition tolerance (pick 2)',
+  'TCP': 'TCP — Transmission Control Protocol, reliable ordered stream',
+  'UDP': 'UDP — User Datagram Protocol, fast unreliable packets',
+  'HTTP': 'HTTP — HyperText Transfer Protocol, the web’s request/response protocol',
+  'DNS': 'DNS — Domain Name System, translates names → IPs',
+  'load balancer': 'Load balancer — spreads requests across servers',
+  'cache': 'Cache — fast layer that stores recent results to avoid recomputation',
+  'deadlock': 'Deadlock — two threads wait forever on each other’s lock',
+  'virtual memory': 'Virtual memory — OS trick giving each process its own isolated address space backed by RAM+disk',
+}
+
+export const GLOSSARY_TERMS = Object.keys(GLOSSARY).sort((a,b)=> b.length - a.length)

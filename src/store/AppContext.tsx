@@ -2,12 +2,24 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { Question, Topic } from '@/data/mockData'
 import { recallApi } from '@/api/client'
 
+function cleanQuestionText(s: string): string {
+  if (!s) return s
+  let t = s.trim()
+  // strip trailing " (123)" bug from seeding / numbering
+  t = t.replace(/\s*\(\d+\)\s*$/, '').trim()
+  // fix missing space "useRAG" -> "use RAG" (case-insensitive)
+  t = t.replace(/use\s*RAG/gi, 'use RAG')
+  // normalize multiple spaces
+  t = t.replace(/\s{2,}/g, ' ')
+  return t
+}
+
 function normalizeQuestion(raw: any): Question {
   return {
     id: String(raw.id),
     topic: raw.topic,
     difficulty: raw.difficulty,
-    question: raw.question,
+    question: cleanQuestionText(raw.question),
     answer: raw.answer,
     explanation: raw.explanation,
     interviewNotes: raw.interviewNotes ?? raw.interview_notes ?? '',
@@ -17,6 +29,22 @@ function normalizeQuestion(raw: any): Question {
     reviewCount: raw.reviewCount ?? raw.review_count ?? 0,
     bookmarked: raw.bookmarked ?? false,
   }
+}
+
+function dedupeQuestions(list: Question[]): Question[] {
+  const seenText = new Set<string>()
+  const seenId = new Set<string>()
+  const out: Question[] = []
+  for (const q of list) {
+    if (seenId.has(q.id)) continue
+    const key = q.question.trim().toLowerCase()
+    if (seenText.has(key)) continue
+    seenText.add(key)
+    seenId.add(q.id)
+    out.push(q)
+  }
+  if (out.length !== list.length) console.warn(`[recall] deduped ${list.length - out.length} duplicate questions (e.g. RAG vs fine tuning)`)
+  return out
 }
 
 export type User = { id: string; email: string; name: string; role: string; level: string; metadata: Record<string, unknown>; streakCount?: number; totalReviews?: number }
@@ -84,13 +112,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then(res => {
         if (cancelled) return
         const list = (res as any).data ?? (res as any)
-        if (Array.isArray(list) && list.length > 0) {
-          setQuestions(list.map(normalizeQuestion))
-        } else if (Array.isArray(res) && res.length > 0) {
-          setQuestions((res as any).map(normalizeQuestion))
-        } else {
-          setQuestions([])
-        }
+        let mapped: Question[] = []
+        if (Array.isArray(list) && list.length > 0) mapped = list.map(normalizeQuestion)
+        else if (Array.isArray(res) && res.length > 0) mapped = (res as any).map(normalizeQuestion)
+        setQuestions(dedupeQuestions(mapped))
       })
       .catch((err: any) => {
         if (!cancelled) {

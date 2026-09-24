@@ -5,6 +5,7 @@ import { Eye, Bookmark, X, Check, RotateCcw, Sparkles, ChevronLeft } from 'lucid
 import { useApp } from '@/store/AppContext'
 import { useLocation } from 'react-router-dom'
 import type { Question } from '@/data/mockData'
+import { GlossaryText } from '@/components/ui/glossary-text'
 
 function ConfidenceBar({ score }: { score: number }) {
   const level = score < 25 ? 'New' : score < 50 ? 'Learning' : score < 80 ? 'Familiar' : 'Mastered'
@@ -189,16 +190,18 @@ function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: 
           ) : (
             <motion.div initial={{opacity:0, y:10}} animate={{opacity:1,y:0}} className="mt-6 space-y-4 overflow-y-auto pr-1 -mr-1 custom-scrollbar max-h-[360px] lg:max-h-[380px]">
               <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4">
-                <div className="text-xs font-semibold tracking-widest text-slate-400 uppercase">Answer</div>
-                <p className="mt-2 text-sm leading-relaxed text-slate-200">{q.answer}</p>
+                <div className="text-xs font-semibold tracking-widest text-slate-400 uppercase">Answer — explain to interviewer</div>
+                <p className="mt-2 text-sm leading-relaxed text-slate-200">“{q.answer}”</p>
+                <p className="mt-2 text-[11px] text-slate-500">Say in 60–90s: what → why → how → trade-off. Keep it conversational.</p>
               </div>
               <div className="rounded-2xl bg-blue-500/10 border border-blue-500/20 p-4">
-                <div className="text-xs font-semibold tracking-widest text-blue-300 uppercase">Explanation</div>
-                <p className="mt-2 text-sm leading-relaxed text-slate-300">{q.explanation}</p>
+                <div className="text-xs font-semibold tracking-widest text-blue-300 uppercase">Explanation — simple terms</div>
+                <p className="mt-2 text-sm leading-relaxed text-slate-300"><GlossaryText text={q.explanation} /></p>
+                <p className="mt-2 text-[11px] text-blue-200/70">Hover dotted words for full form / simple definition.</p>
               </div>
               <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4">
                 <div className="text-xs font-semibold tracking-widest text-amber-300 uppercase flex items-center gap-2"><Sparkles className="w-3 h-3"/> Interview Notes</div>
-                <p className="mt-2 text-sm leading-relaxed text-slate-300">{q.interviewNotes}</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-300"><GlossaryText text={q.interviewNotes} /></p>
               </div>
               <div>
                 <div className="text-xs font-semibold tracking-widest text-slate-400 uppercase">Common Follow-ups</div>
