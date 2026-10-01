@@ -54,6 +54,7 @@ Desktop.ini
 .tmp
 temp
 tmp
+download_cli.ps1
 
 # Coverage
 coverage
