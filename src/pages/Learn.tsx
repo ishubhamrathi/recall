@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion'
 import type { PanInfo } from 'framer-motion'
-import { Eye, Bookmark, X, Check, RotateCcw, Sparkles, ChevronLeft } from 'lucide-react'
+import { Eye, Bookmark, X, Check, RotateCcw, Sparkles, ChevronLeft, ExternalLink, Lightbulb } from 'lucide-react'
 import { useApp } from '@/store/AppContext'
 import { useLocation } from 'react-router-dom'
 import type { Question } from '@/data/mockData'
-import { GlossaryText } from '@/components/ui/glossary-text'
+import { Prose } from '@/components/ui/prose'
+import { TermList } from '@/components/ui/term-list'
+import { findGlossaryTermsIn } from '@/lib/glossary'
 import { recallApi } from '@/api/client'
+import { sanitizeEnrichResult } from '@/lib/ai-output'
+import type { SanitizedEnrich } from '@/lib/ai-output'
 
 function ConfidenceBar({ score }: { score: number }) {
   const level = score < 25 ? 'New' : score < 50 ? 'Learning' : score < 80 ? 'Familiar' : 'Mastered'
@@ -151,6 +155,152 @@ function GhostCard({ q, depth }: { q: Question; depth: number }) {
   )
 }
 
+type Tab = 'answer' | 'example' | 'ai' | 'notes'
+
+/** Perplexity-style numbered citations. */
+function SourceList({ sources }: { sources: SanitizedEnrich['sources'] }) {
+  if (!sources.length) return null
+  return (
+    <div>
+      <div className="text-[11px] font-semibold tracking-widest text-slate-400 uppercase">
+        Sources ({sources.length})
+      </div>
+      <ol className="mt-2 space-y-2">
+        {sources.map(s => (
+          <li key={s.url} className="flex gap-2.5">
+            <span className="mt-0.5 shrink-0 w-5 h-5 grid place-items-center rounded-md bg-white/5 border border-white/10 text-[10px] text-slate-400 tabular-nums">
+              {s.n}
+            </span>
+            <div className="min-w-0 flex-1">
+              <a
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="group inline-flex items-start gap-1 text-xs font-medium text-cyan-200 hover:text-cyan-100"
+              >
+                <span className="break-words">{s.title}</span>
+                <ExternalLink className="w-3 h-3 mt-0.5 shrink-0 opacity-50 group-hover:opacity-90" />
+              </a>
+              <div className="text-[10px] text-slate-500 truncate">{s.publisher}</div>
+              {s.snippet && <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">{s.snippet}</p>}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+function AiButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white disabled:opacity-50 hover:from-violet-500 hover:to-fuchsia-400 border border-white/10"
+    >
+      <Sparkles className="w-3 h-3" /> {loading ? 'Generating…' : 'AI Answer'}
+    </button>
+  )
+}
+
+function AiError() {
+  return (
+    <div className="flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-200">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+      AI enrichment under maintenance — try again later
+    </div>
+  )
+}
+
+function AiEmpty({ loading, onGenerate }: { loading: boolean; onGenerate: () => void }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-violet-500/30 bg-violet-500/[0.04] p-5 text-center">
+      <Sparkles className="w-5 h-5 mx-auto text-violet-300/70" />
+      <p className="mt-2 text-sm text-slate-300">Not generated for this question yet.</p>
+      <p className="mt-1 text-xs leading-relaxed text-slate-500">
+        Generates a fresh answer, a worked example and cited sources.
+      </p>
+      <div className="mt-3 flex justify-center">
+        <AiButton loading={loading} onClick={onGenerate} />
+      </div>
+    </div>
+  )
+}
+
+function NoteEditor({
+  note,
+  editing,
+  draft,
+  onDraft,
+  onEdit,
+  onCancel,
+  onSave,
+  onDelete,
+}: {
+  note: string
+  editing: boolean
+  draft: string
+  onDraft: (v: string) => void
+  onEdit: () => void
+  onCancel: () => void
+  onSave: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="rounded-2xl bg-violet-500/10 border border-violet-500/20 p-4">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold tracking-widest text-violet-300 uppercase flex items-center gap-2">
+          <Sparkles className="w-3 h-3" /> My Note
+        </div>
+        {note && !editing && (
+          <div className="flex gap-1">
+            <button onClick={onEdit} className="text-[11px] px-2 py-1 rounded-full bg-white/10 border border-white/10 hover:bg-white/15">
+              Edit
+            </button>
+            <button onClick={onDelete} className="text-[11px] px-2 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-red-500/20 hover:text-red-300">
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
+      {!editing ? (
+        note ? (
+          <p className="mt-2 text-sm leading-relaxed text-slate-200 whitespace-pre-wrap">{note}</p>
+        ) : (
+          <button
+            onClick={onEdit}
+            className="mt-2 w-full py-2 rounded-xl border border-dashed border-violet-500/30 bg-white/[0.02] text-xs text-violet-300 hover:bg-violet-500/10 hover:border-violet-500/40"
+          >
+            + Add personal note for later
+          </button>
+        )
+      ) : (
+        <div className="mt-2 space-y-2">
+          <textarea
+            value={draft}
+            onChange={e => onDraft(e.target.value)}
+            placeholder="Add your trick, shortcut, or reminder for later..."
+            rows={3}
+            className="w-full px-3 py-2 rounded-xl bg-[#0B1020] border border-violet-500/30 outline-none text-sm placeholder:text-slate-500 focus:border-violet-500/50 resize-none"
+            autoFocus
+          />
+          <div className="flex gap-2 justify-end">
+            <button onClick={onCancel} className="px-3 py-1.5 rounded-full text-xs border border-white/10 hover:bg-white/5">
+              Cancel
+            </button>
+            <button
+              onClick={onSave}
+              className="px-3 py-1.5 rounded-full text-xs bg-violet-600 text-white hover:bg-violet-500"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: Question; revealed:boolean; onReveal:()=>void; onBookmark:()=>void; onSwipe:(dir:'left'|'right'|'up')=>void; dir?: 'left'|'right'|'up'|null }) {
   const diffColor = q.difficulty==='Easy' ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/15' : q.difficulty==='Medium' ? 'text-amber-300 border-amber-500/30 bg-amber-500/15' : 'text-red-300 border-red-500/30 bg-red-500/15'
   const { notes, saveNote, deleteNote, showToast } = useApp()
@@ -159,20 +309,49 @@ function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: 
   const [draftNote, setDraftNote] = useState(note)
   useEffect(() => { setDraftNote(note); if (!note) setEditingNote(false) }, [note, q.id])
   const [aiLoading, setAiLoading] = useState(false)
-  const [aiResult, setAiResult] = useState<{ answer: string; explanation?: string; source?: string } | null>(null)
+  const [aiResult, setAiResult] = useState<SanitizedEnrich | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [tab, setTab] = useState<Tab>('answer')
   const handleAiEnrich = async () => {
     setAiLoading(true); setAiError(null)
     try {
-      const res: any = await recallApi.enrich({ question: q.question, topic: q.topic, difficulty: q.difficulty }).catch(() => recallApi.enrichById(q.id, false))
-      setAiResult(res)
-    } catch (e: any) {
-      const msg = e?.data?.error || e?.message || 'AI enrichment under maintenance — try again later'
-      // expected to fail without keys, show small maintenance error
-      setAiError(msg.includes('maintenance') ? msg : 'AI enrichment under maintenance — try again later')
+      // Prefer the by-id endpoint: the backend looks the question up itself and owns
+      // prompt assembly, so no question text (and no template) is ever built client
+      // side. The by-text endpoint stays as a fallback for rows the server can't resolve.
+      const res: any = await recallApi.enrichById(q.id, false).catch(() =>
+        recallApi.enrich({ question: q.question, topic: q.topic, difficulty: q.difficulty })
+      )
+      // Providers occasionally echo the prompt template back; never render it.
+      const clean = sanitizeEnrichResult(res, { question: q.question })
+      if (!clean) { setAiError('AI enrichment under maintenance — try again later'); return }
+      setAiResult(clean)
+      setTab('ai')
+    } catch {
+      setAiError('AI enrichment under maintenance — try again later')
     } finally { setAiLoading(false) }
   }
-  useEffect(() => { setAiResult(null); setAiError(null); setAiLoading(false) }, [q.id])
+  useEffect(() => { setAiResult(null); setAiError(null); setAiLoading(false); setTab('answer') }, [q.id])
+
+  // Server-supplied definitions first, then anything from the local glossary that
+  // actually shows up in the content — shown as a list, not a hover on every word.
+  const terms = useMemo(() => {
+    const seen = new Set<string>()
+    const out = (aiResult?.terms ?? []).map(t => ({ term: t.term, definition: t.definition }))
+    out.forEach(t => seen.add(t.term.toLowerCase()))
+    for (const t of findGlossaryTermsIn(q.answer, q.explanation, aiResult?.answer, aiResult?.example, aiResult?.deepDive)) {
+      if (seen.has(t.term.toLowerCase())) continue
+      seen.add(t.term.toLowerCase())
+      out.push(t)
+    }
+    return out
+  }, [q.answer, q.explanation, aiResult])
+
+  const TABS: { id: Tab; label: string; ai?: boolean; dot?: boolean }[] = [
+    { id: 'answer', label: 'Answer' },
+    { id: 'example', label: 'Example', ai: true, dot: !aiResult?.example },
+    { id: 'ai', label: 'AI Answer', ai: true, dot: !aiResult },
+    { id: 'notes', label: 'Notes', dot: !!note },
+  ]
   const dragX = useMotionValue(0)
   const dragRotate = useTransform(dragX, [-180, 180], [-14, 14])
   return (
@@ -222,90 +401,140 @@ function QuestionCard({ q, revealed, onReveal, onBookmark, onSwipe, dir }: { q: 
           {!revealed ? (
             <AutoRevealButton title={q.question} revealed={revealed} onReveal={onReveal} />
           ) : (
-            <motion.div initial={{opacity:0, y:10}} animate={{opacity:1,y:0}} className="mt-6 space-y-4 overflow-y-auto pr-1 -mr-1 custom-scrollbar max-h-[360px] lg:max-h-[380px]">
-              <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4">
-                <div className="text-xs font-semibold tracking-widest text-slate-400 uppercase">Answer — explain to interviewer</div>
-                <p className="mt-2 text-sm leading-relaxed text-slate-200">“{q.answer}”</p>
-                <p className="mt-2 text-[11px] text-slate-500">Say in 60–90s: what → why → how → trade-off. Keep it conversational.</p>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+            <motion.div initial={{opacity:0, y:10}} animate={{opacity:1,y:0}} className="mt-5 flex flex-col min-h-0">
+              <div role="tablist" aria-label="Question detail" className="flex gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/10 shrink-0">
+                {TABS.map(t => (
                   <button
-                    onClick={handleAiEnrich}
-                    disabled={aiLoading}
-                    className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white disabled:opacity-50 hover:from-violet-500 hover:to-fuchsia-400 border border-white/10"
+                    key={t.id}
+                    role="tab"
+                    aria-selected={tab === t.id}
+                    onClick={() => setTab(t.id)}
+                    className={`relative flex-1 min-w-0 flex items-center justify-center gap-1.5 px-1.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      tab === t.id ? 'bg-white/[0.08] text-white' : 'text-slate-400 hover:text-white'
+                    }`}
                   >
-                    <Sparkles className="w-3 h-3" /> {aiLoading ? 'Generating…' : 'AI Answer'}
+                    {t.ai && <Sparkles className={`w-3 h-3 shrink-0 ${tab === t.id ? 'text-fuchsia-300' : 'text-fuchsia-400/40'}`} />}
+                    <span className="truncate">{t.label}</span>
+                    {t.dot && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tab === t.id ? 'bg-white/50' : 'bg-white/20'}`} />}
                   </button>
-                  {aiError && <span className="text-[11px] text-amber-300">under maintenance</span>}
-                </div>
-                {aiError && (
-                  <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-200">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" /> AI enrichment under maintenance — try again later
-                  </div>
-                )}
-                {aiResult && (
-                  <div className="mt-3 rounded-xl bg-fuchsia-500/10 border border-fuchsia-500/20 p-3">
-                    <div className="text-[11px] font-medium tracking-widest text-fuchsia-300 uppercase flex items-center gap-1"><Sparkles className="w-3 h-3"/> AI Enriched {aiResult.source ? `• ${aiResult.source}` : ''}</div>
-                    <p className="mt-1.5 text-sm leading-relaxed text-fuchsia-100/90">{aiResult.answer}</p>
-                    {aiResult.explanation && <p className="mt-1.5 text-xs leading-relaxed text-slate-300"><GlossaryText text={aiResult.explanation} /></p>}
-                  </div>
-                )}
+                ))}
               </div>
-              <div className="rounded-2xl bg-blue-500/10 border border-blue-500/20 p-4">
-                <div className="text-xs font-semibold tracking-widest text-blue-300 uppercase">Explanation — simple terms</div>
-                <p className="mt-2 text-sm leading-relaxed text-slate-300"><GlossaryText text={q.explanation} /></p>
-                <p className="mt-2 text-[11px] text-blue-200/70">Hover dotted words for full form / simple definition.</p>
-              </div>
-              <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4">
-                <div className="text-xs font-semibold tracking-widest text-amber-300 uppercase flex items-center gap-2"><Sparkles className="w-3 h-3"/> Interview Notes</div>
-                <p className="mt-2 text-sm leading-relaxed text-slate-300"><GlossaryText text={q.interviewNotes} /></p>
-              </div>
-              <div>
-                <div className="text-xs font-semibold tracking-widest text-slate-400 uppercase">Common Follow-ups</div>
-                <ul className="mt-2 space-y-1.5">
-                  {q.followUps.map(f=><li key={f} className="text-sm text-slate-400 flex gap-2"><span className="text-cyan-400">•</span>{f}</li>)}
-                </ul>
-              </div>
-              <div className="rounded-2xl bg-violet-500/10 border border-violet-500/20 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-semibold tracking-widest text-violet-300 uppercase flex items-center gap-2"><Sparkles className="w-3 h-3"/> My Note</div>
-                  {note && !editingNote && (
-                    <div className="flex gap-1">
-                      <button onClick={() => { setDraftNote(note); setEditingNote(true) }} className="text-[11px] px-2 py-1 rounded-full bg-white/10 border border-white/10 hover:bg-white/15">Edit</button>
-                      <button onClick={() => { deleteNote(q.id); showToast('Note removed') }} className="text-[11px] px-2 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-red-500/20 hover:text-red-300">Delete</button>
-                    </div>
+
+              {aiResult && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 shrink-0">
+                  <span className="px-2 py-0.5 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/20 text-fuchsia-300 text-[10px]">
+                    {aiResult.model || 'ai'}
+                  </span>
+                  {aiResult.cached && (
+                    <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-400 text-[10px]">cached</span>
+                  )}
+                  {aiResult.sources.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-400 text-[10px]">
+                      {aiResult.sources.length} {aiResult.sources.length === 1 ? 'source' : 'sources'}
+                    </span>
                   )}
                 </div>
-                {!editingNote ? (
-                  note ? (
-                    <p className="mt-2 text-sm leading-relaxed text-slate-200 whitespace-pre-wrap">{note}</p>
-                  ) : (
-                    <button onClick={() => setEditingNote(true)} className="mt-2 w-full py-2 rounded-xl border border-dashed border-violet-500/30 bg-white/[0.02] text-xs text-violet-300 hover:bg-violet-500/10 hover:border-violet-500/40">+ Add personal note for later</button>
-                  )
-                ) : (
-                  <div className="mt-2 space-y-2">
-                    <textarea
-                      value={draftNote}
-                      onChange={e => setDraftNote(e.target.value)}
-                      placeholder="Add your trick, shortcut, or reminder for later..."
-                      rows={3}
-                      className="w-full px-3 py-2 rounded-xl bg-[#0B1020] border border-violet-500/30 outline-none text-sm placeholder:text-slate-500 focus:border-violet-500/50 resize-none"
-                      autoFocus
-                    />
-                    <div className="flex gap-2 justify-end">
-                      <button onClick={() => { setEditingNote(false); setDraftNote(note) }} className="px-3 py-1.5 rounded-full text-xs border border-white/10 hover:bg-white/5">Cancel</button>
-                      <button
-                        onClick={() => {
-                          if (!draftNote.trim()) { deleteNote(q.id); showToast('Note removed') }
-                          else { saveNote(q.id, draftNote); showToast(note ? 'Note updated' : 'Note saved') }
-                          setEditingNote(false)
-                        }}
-                        className="px-3 py-1.5 rounded-full text-xs bg-violet-600 text-white hover:bg-violet-500"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                )}
+              )}
+
+              <div className="mt-3 flex-1 min-h-0 overflow-y-auto pr-1 -mr-1 custom-scrollbar max-h-[300px] lg:max-h-[320px]">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={tab}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="space-y-4"
+                  >
+                    {tab === 'answer' && (
+                      <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4">
+                        <div className="text-xs font-semibold tracking-widest text-slate-400 uppercase">Answer — explain to interviewer</div>
+                        <Prose text={q.answer} className="mt-2 text-slate-200" />
+                        <p className="mt-2 text-[11px] text-slate-500">Say in 60–90s: what → why → how → trade-off. Keep it conversational.</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <AiButton loading={aiLoading} onClick={handleAiEnrich} />
+                        </div>
+                        {aiError && <div className="mt-2"><AiError /></div>}
+                      </div>
+                    )}
+
+                    {tab === 'example' && (
+                      aiResult?.example ? (
+                        <div className="rounded-2xl bg-fuchsia-500/[0.07] border border-fuchsia-500/20 p-4">
+                          <div className="text-xs font-semibold tracking-widest text-fuchsia-300 uppercase flex items-center gap-1.5">
+                            <Lightbulb className="w-3 h-3" /> Worked example
+                          </div>
+                          <Prose text={aiResult.example} className="mt-2" />
+                        </div>
+                      ) : (
+                        <AiEmpty loading={aiLoading} onGenerate={handleAiEnrich} />
+                      )
+                    )}
+
+                    {tab === 'ai' && (
+                      aiResult ? (
+                        <>
+                          {(aiResult.answer || aiResult.example) && (
+                            <div className="rounded-2xl bg-fuchsia-500/[0.07] border border-fuchsia-500/20 p-4">
+                              <div className="text-xs font-semibold tracking-widest text-fuchsia-300 uppercase flex items-center gap-1.5">
+                                <Sparkles className="w-3 h-3" /> Latest answer
+                              </div>
+                              <Prose text={aiResult.answer || aiResult.example} className="mt-2" />
+                            </div>
+                          )}
+                          {aiResult.deepDive && (
+                            <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4">
+                              <div className="text-xs font-semibold tracking-widest text-slate-400 uppercase">Going deeper</div>
+                              <Prose text={aiResult.deepDive} className="mt-2" />
+                            </div>
+                          )}
+                          {aiResult.sources.length > 0 && (
+                            <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-4">
+                              <SourceList sources={aiResult.sources} />
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <AiEmpty loading={aiLoading} onGenerate={handleAiEnrich} />
+                      )
+                    )}
+
+                    {tab === 'notes' && (
+                      <>
+                        <div className="rounded-2xl bg-blue-500/10 border border-blue-500/20 p-4">
+                          <div className="text-xs font-semibold tracking-widest text-blue-300 uppercase">Explanation — simple terms</div>
+                          <Prose text={q.explanation} className="mt-2" />
+                        </div>
+                        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4">
+                          <div className="text-xs font-semibold tracking-widest text-amber-300 uppercase flex items-center gap-2"><Sparkles className="w-3 h-3"/> Interview Notes</div>
+                          <Prose text={q.interviewNotes} className="mt-2" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold tracking-widest text-slate-400 uppercase">Common Follow-ups</div>
+                          <ul className="mt-2 space-y-1.5">
+                            {q.followUps.map(f=><li key={f} className="text-sm text-slate-400 flex gap-2"><span className="text-cyan-400">•</span><span className="min-w-0 flex-1">{f}</span></li>)}
+                          </ul>
+                        </div>
+                        <NoteEditor
+                          note={note}
+                          editing={editingNote}
+                          draft={draftNote}
+                          onDraft={setDraftNote}
+                          onEdit={() => { setDraftNote(note); setEditingNote(true) }}
+                          onCancel={() => { setEditingNote(false); setDraftNote(note) }}
+                          onSave={() => {
+                            if (!draftNote.trim()) { deleteNote(q.id); showToast('Note removed') }
+                            else { saveNote(q.id, draftNote); showToast(note ? 'Note updated' : 'Note saved') }
+                            setEditingNote(false)
+                          }}
+                          onDelete={() => { deleteNote(q.id); showToast('Note removed') }}
+                        />
+                      </>
+                    )}
+
+                    <TermList terms={terms} />
+                  </motion.div>
+                </AnimatePresence>
               </div>
             </motion.div>
           )}
@@ -391,7 +620,7 @@ function buildRecallQueue(arr: Question[]): Question[] {
 }
 
 export default function Learn() {
-  const { questions, toggleBookmark, updateConfidence, showToast, selectedTopics } = useApp()
+  const { questions, toggleBookmark, updateConfidence, showToast, selectedTopics, loading, questionsError } = useApp()
   const location = useLocation()
   const params = new URLSearchParams(location.search)
   const isBundle = params.get('bundle') === 'recall' || params.get('mix') === 'recall' // support both
@@ -411,7 +640,7 @@ export default function Learn() {
     // recall bundle: fresh + due interleaved, shuffled
     return buildRecallQueue(difficultyFiltered)
   }, [difficultyFiltered, isBundle])
-  const q = list[idx % list.length]
+  const q = list.length > 0 ? list[idx % list.length] : undefined
   const next1 = list.length > 1 ? list[(idx + 1) % list.length] : null
   const next2 = list.length > 2 ? list[(idx + 2) % list.length] : null
   const shownAtRef = useRef<number>(Date.now())
@@ -472,6 +701,8 @@ export default function Learn() {
     }, 320)
   }
 
+  if (loading) return <div className="text-center py-20 text-slate-400">Loading questions…</div>
+  if (questionsError) return <div className="text-center py-20 text-slate-400">{questionsError}</div>
   if(!q) return <div className="text-center py-20 text-slate-400">No questions for this filter.</div>
 
   return (

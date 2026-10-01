@@ -2,7 +2,7 @@
 
 > **Status:** v1.1 — Supabase contract adapted to this platform's Spring Boot backend.  
 > **Base URL:** `https://<platform-host>` (prod: `https://platformbe.shubhamrathi.in`, local: `http://localhost:8080`)  
-> **Auth:** Session cookie (HttpOnly `JSESSIONID`) via `POST /api/auth/*` — send `credentials: "include"` on every request. `X-API-Key` alternative for external PROJECT clients via Access Control.  
+> **Auth:** Session cookie (HttpOnly `SESSION` — *not* `JSESSIONID`; see `SessionConfig`) via `POST /api/auth/*` — send `credentials: "include"` on every request. `X-API-Key` alternative for external PROJECT clients via Access Control.  
 > **Content-Type:** `application/json` for all JSON endpoints. `Prefer: return=representation` not required (Spring always returns bodies).
 
 This document is the **single source of truth** to replace the Supabase PostgREST contract (`reCALL — Backend API Contract v1`) with zero or minimal frontend changes. All Supabase REST/RLS/RPC concepts are re-expressed as Spring MVC endpoints backed by Postgres (`platform` schema) + Flyway migrations `V70+`.
@@ -356,21 +356,135 @@ Auth required. Creates `recall_learning_sessions`.
 #### `PATCH /api/recall/sessions/{id}` — body `{ "endedAt":"...", "questionsSeen":12, "knows":8, "practices":4 }`
 Auth required. Only owner.
 
-### 3.8 Profiles
+### 3.8 AI Enrichment
+
+#### `POST /api/recall/questions/{id}/enrich?persist=false` → `200`
+Auth required. Generates an AI answer for an **existing** question. This is the preferred entry point: the server resolves the question row and assembles the prompt itself, so the client never sends question text and never holds the template.
+
+#### `POST /api/recall/enrich` — body `{ "question":"...","topic":"...","difficulty":"..." }`
+Auth required. Fallback for text that has no stored row. Accepts raw question text only — **never** prompt, template, or system-instruction fields.
+
+Response `200` (both endpoints) — **v2 shape**:
+```json
+{
+  "answer": "markdown, 2–4 sentences, the direct answer",
+  "example": "markdown, one concrete worked example",
+  "deepDive": "markdown, optional extra reading",
+  "sources": [{ "title": "...", "url": "https://...", "publisher": "...", "snippet": "..." }],
+  "terms": [{ "term": "CAS", "definition": "Compare-And-Swap — ..." }],
+  "model": "gemini-2.5-flash",
+  "generatedAt": "2026-09-28T10:14:03Z",
+  "cached": false
+}
+```
+
+`answer` and `example` are required and must be non-blank. `deepDive`, `sources`, `terms`
+and `cached` are optional; `sources: []` and `terms: []` are valid responses. All prose
+fields are **markdown** (paragraphs, lists, bold, fenced code, links) — not raw HTML, and
+not one long single-paragraph string. The three sections must carry different information;
+see `BACKEND_REQUIREMENTS_ENRICH_V2.md` §1.
+
+The client still accepts the older `{answer, explanation, source}` response and splits a
+single markdown `answer` on `## Example` / `## Key points` / `## Sources` headings, so
+client and server can roll out independently.
+
+**Hard requirement — the prompt template must never leave the backend.** Providers routinely echo the system prompt back in the completion, so the service is responsible for:
+
+| Rule | Detail |
+|---|---|
+| Never echo the prompt | `answer`/`example`/`deepDive` contain generated content only. No system prompt, no instruction block, no template id/version. |
+| Post-process the completion | Strip role turns (`System:`, `User:`, `Assistant:`), chat control tokens (`<\|im_start\|>`, `[INST]`, `<<SYS>>`), any `Topic:`/`Difficulty:`/`Format:` field echo, and JSON/code-fence envelopes. Return markdown prose. Sanitise **every** field, and sanitise **before** caching. |
+| `model` is a short token | Provider/model name only (e.g. `gemini-2.5-flash`, `openai/gpt-4o-mini`). No prompt ids, route names, or internal config. |
+| `sources[].url` is absolute `http(s)` | Must be a real, reachable page. No relative paths, no tracking params, deduplicated by canonical URL. Return `[]` rather than fabricating links. |
+| `terms[]` is grounded | Only terms that actually appear in the returned text. 0–10 items. |
+| Never expose the template via error text | `4xx`/`5xx` bodies use the generic error codes in §6, not raw upstream or prompt content. |
+
+`src/lib/ai-output.ts` (`sanitizeModelText` / `sanitizeSources` / `sanitizeTerms` /
+`sanitizeEnrichResult`) re-applies the same stripping and URL checks in the browser as a
+defence-in-depth layer, so a leak degrades to a clean answer and a bad URL disappears
+instead of rendering. That is a safety net, not a substitute for the server-side rules.
+
+> **Open defect (2026-09-26):** the enrich endpoints were returning the echoed prompt template to the client, which the "AI Answer" button rendered verbatim. Frontend is patched; the server-side fix, the cache purge for already-poisoned completions, and paste-ready acceptance tests are in **`BACKEND_REQUIREMENTS_AI_PROMPT_LEAK.md`**. Until that ships, this section is a requirement, not the implemented behaviour.
+>
+> **v2 (2026-09-28):** the structured shape above, the grounded-sources rules, the terms
+> field, the schema-enforced prompt and the 15 acceptance cases are in
+> **`BACKEND_REQUIREMENTS_ENRICH_V2.md`**.
+
+### 3.9 Profiles
 
 - `GET /api/auth/me` → `{ "id":"uuid","email":"a@b.com","name":"Shubham","role":"USER" }` + recall fields when `?include=recall`.
 - `PUT /api/recall/profile` (optional v1) → `{ "name","avatarUrl" }`
 
 ---
 
-## 4. Auth Details (reused)
+## 4. Auth Details
+
+Every sign-in method converges on the same `SESSION` cookie. There is no bearer token and no
+`Authorization` header. Full contract: `platform/docs/AUTH_CLIENT_GUIDE.md`.
 
 | Endpoint | Method | Body | Response |
 |---|---|---|---|
-| `/api/auth/register` | POST | `{ "email","password","name" }` | `201 { "id","email","name","role" }` or `409` |
-| `/api/auth/login` | POST | `{ "email","password" }` | `200 { "id","email","name","role" }` + `Set-Cookie: JSESSIONID=...` |
+| `/api/auth/register` | POST | `{ "email","password","name" }` | `201 { "id","email","name","role","level","metadata" }` or `409 Email already exists` |
+| `/api/auth/login` | POST | `{ "email","password" }` | `200 { … }` + `Set-Cookie: SESSION` / `XSRF-TOKEN` |
+| `/api/auth/google` | POST | `{ "credential", "hd"?, "inviteCode"? }` | `200 { … }` + `Set-Cookie`, or `400` / `403` / `503` |
+| `/api/auth/google/config` | GET | — | `200 { "configured": bool, "clientId": string }` — public, no session. **Pending backend** |
 | `/api/auth/logout` | POST | — | `200 { "message":"Logged out successfully" }` |
-| `/api/auth/me` | GET | — | `200 { "id","email","name","role" }` or `401` |
+| `/api/auth/me` | GET | — | `200 { "id","email","name","role","level","metadata","phone"?,"emailVerified","phoneVerified" }` or `401` |
+| `/api/auth/otp/request` | POST | `{ "email","channel" }` | `200 { "message" }` — always 200, never reveals whether the account exists |
+| `/api/auth/otp/verify` | POST | `{ "email","code","channel" }` | `200 { … }` / `400 Invalid or expired code` / `429 Too many attempts` |
+| `/api/auth/password` | POST | `{ "newPassword" }` | `200` — session required |
+
+Error bodies are uniform: `{ "error": "<stable code>", "hint": "<human detail>"?, "fieldErrors"?: {...} }`.
+
+**Cookies.** `SESSION` (HttpOnly, 24h) is the credential; `XSRF-TOKEN` is readable by JS and must
+be echoed in `X-XSRF-TOKEN` on every `POST`/`PUT`/`PATCH`/`DELETE`. Both are `Path=/`,
+`SameSite=None; Secure`, so **the site must be HTTPS** (localhost is exempt) or the browser
+silently drops them and every later call is `401`.
+
+**CSRF-exempt** (reached before a session exists, so no token is expected):
+`/api/auth/login`, `/register`, `/logout`, `/google`, `/otp/request`, `/otp/verify`.
+Everything else needs the header. One `403 {"error":"Invalid CSRF token"}` is retried once with a
+freshly read cookie (`client.ts` `requestWithCsrfRetry`).
+
+**Google sign-in is the credential flow only.** The browser obtains an ID token from Google
+Identity Services and posts it to `/api/auth/google`; the server verifies it against Google's
+public JWKS and mints the same `SESSION` cookie. The old server-redirect endpoints
+(`GET /api/auth/google`, `GET /api/auth/google/callback`) were removed and must not be used.
+
+Status codes for `/api/auth/google`:
+
+| Status | `error` | Meaning |
+|---|---|---|
+| `400` | `Validation failed` | `credential` blank or over-length — an integration bug |
+| `400` | `Invalid Google credential` | expired, wrong audience/project, or bad signature — re-prompt, never retry the same token |
+| `403` | `Account link required` | email exists but Google did not assert it verified. No `email` in the body, and no linking endpoint exists yet — fall back to password sign-in |
+| `403` | `Email not allowed` | domain/invite rejected, `hint` says which |
+| `503` | `Google sign-in is not configured` | backend has no `GOOGLE_CLIENT_ID` |
+
+There is no `409` and no `429` on this endpoint. The backend validates the token audience against
+one client id, so every site's OAuth client must come from the same Google Cloud project.
+
+**Where the browser gets the client id.** GIS needs an id to render a button, and the id must be
+the same one the server pins as `aud`. Rather than duplicating `GOOGLE_CLIENT_ID` in each site's
+build, the site reads it from the deployment:
+
+```ts
+// lib/googleAuth.ts — resolved once, before the button mounts
+const clientId = await resolveGoogleClientId()
+//   GET /api/auth/google/config -> its configured clientId (cached)
+//   server unreachable/not deployed -> VITE_GOOGLE_CLIENT_ID
+//   neither -> null
+if (clientId) mountGoogleButton(el, clientId, onCredential)
+// null -> render nothing; email + password still works
+```
+
+`GET /api/auth/google/config` is **public and pending backend**: it returns
+`{ "configured": false, "clientId": "" }` when `app.google.client-id` is unset, and must be added
+to `SecurityConfig`'s permit list (a plain `GET`, so no CSRF exemption is needed). Today an
+unauthenticated caller gets the default-deny `401`, which the client reads as "the server could
+not be asked" — not as a session expiry, so nothing is logged out — and falls back to
+`VITE_GOOGLE_CLIENT_ID`. If neither is available the button is not rendered. A definitive
+server answer of `configured: false` hides the button regardless of `.env`.
 
 Frontend hydration:
 ```ts
@@ -378,7 +492,8 @@ const res = await fetch('/api/auth/me', { credentials: 'include' })
 if (res.ok) setUser(await res.json())
 ```
 
-Session config: `spring.session.store-type=jdbc`, `HttpSessionSecurityContextRepository`, `maximumSessions=1`, `withCredentials:true` on client.
+Session config: `spring.session.store-type=jdbc`, `HttpSessionSecurityContextRepository`,
+`maximumSessions=1`, `withCredentials:true` on client.
 
 ---
 

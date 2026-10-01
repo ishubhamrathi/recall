@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { Question, Topic } from '@/data/mockData'
+import { TOPIC_COLORS } from '@/data/mockData'
 import { recallApi } from '@/api/client'
 
 function cleanQuestionText(s: string): string {
@@ -47,7 +48,16 @@ function dedupeQuestions(list: Question[]): Question[] {
   return out
 }
 
-export type User = { id: string; email: string; name: string; role: string; level: string; metadata: Record<string, unknown>; streakCount?: number; totalReviews?: number }
+function isTopic(value: unknown): value is Topic {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(TOPIC_COLORS, value)
+}
+
+function normalizeTopicList(value: unknown): Topic[] {
+  if (!Array.isArray(value)) return []
+  return Array.from(new Set(value.filter(isTopic)))
+}
+
+export type User = { id: string; email: string; name: string; role: string; level: string; metadata: Record<string, unknown>; streakCount?: number; totalReviews?: number; avatarUrl?: string }
 
 type AppState = {
   questions: Question[]
@@ -66,11 +76,23 @@ type AppState = {
   showToast: (msg: string) => void
   toast: string | null
   loading: boolean
+  questionsError: string | null
   user: User | null
+  authReady: boolean
   login: (email: string, password: string) => Promise<User>
   register: (email: string, password: string, name: string) => Promise<User>
   signOut: () => Promise<void>
   logout: () => Promise<void>
+  /**
+   * Exchange a Google ID token for a session, then adopt the returned user. Google sign-in
+   * mints the same SESSION cookie as password/OTP, so from here on there is no distinction
+   * between sign-in methods. Rejects with a GoogleAuthError the caller can branch on.
+   */
+  signInWithGoogle: (credential: string) => Promise<User>
+  /** Send a 6-digit code to the authenticated user's email to confirm the address. */
+  requestOtp: (email: string) => Promise<{ message: string }>
+  /** Verify that 6-digit code. Refetches /me so verified state is reflected in the UI. */
+  verifyOtp: (email: string, code: string) => Promise<User>
   updateProfile: (body: { name?: string; level?: string; metadata?: Record<string, unknown> }) => Promise<User>
   patchMetadata: (metadata: Record<string, unknown>) => Promise<User>
   patchLevel: (level: string) => Promise<User>
@@ -82,60 +104,147 @@ type AppState = {
 
 const Ctx = createContext<AppState | null>(null)
 
+const AUTH_TIMEOUT_MS = 8000
+const QUESTIONS_TIMEOUT_MS = 15000
+
+// Single-flight session bootstrap. StrictMode double-invokes effects: a plain ref guard
+// (`didAuthInit`) would let the simulated unmount cancel the only in-flight request while
+// blocking the retry, stranding authReady=false and pinning every guard on "Checking your
+// session…". Sharing the request at module level keeps it to one call AND lets the second
+// effect run apply the result.
+let authBootstrap: Promise<{ user: User | null; streak: number }> | null = null
+// Set once login()/register() establishes a session. A slow bootstrap that resolves
+// afterwards captured the anonymous state, and would otherwise clobber the new user
+// back to null — bouncing them straight back out of the app they just signed into.
+let sessionEstablished = false
+
+function bootstrapAuth(): Promise<{ user: User | null; streak: number }> {
+  if (!authBootstrap) {
+    authBootstrap = (async () => {
+      let u: any = null
+      let streak = 0
+      // The SESSION cookie is the only credential — /me is the single source of truth
+      // for "am I signed in", for every sign-in method (password, OTP, Google).
+      try {
+        u = await recallApi.auth.me(true)
+      } catch { /* no valid session */ }
+      try {
+        const p = await recallApi.progress()
+        if (typeof p?.streak === 'number') streak = p.streak
+      } catch { /* progress is auth-only; a signed-in user without it is still signed in */ }
+      return { user: u, streak }
+    })().catch(() => ({ user: null, streak: 0 }))
+  }
+  return authBootstrap
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [questions, setQuestions] = useState<Question[]>([])
   const [search, setSearch] = useState('')
   const [selectedTopic, setSelectedTopic] = useState<Topic | 'All'>(() => {
-    try { const v = localStorage.getItem('recall_selectedTopic') as Topic | 'All' | null; return (v as any) || 'All' } catch { return 'All' }
+    try { const v = localStorage.getItem('recall_selectedTopic'); return isTopic(v) ? v : 'All' } catch { return 'All' }
   })
   const [selectedTopics, setSelectedTopics] = useState<Topic[]>(() => {
-    try { const raw = localStorage.getItem('recall_selectedTopics'); if (raw) return JSON.parse(raw); const single = localStorage.getItem('recall_selectedTopic'); if (single && single !== 'All') return [single as Topic]; return [] } catch { return [] }
+    try {
+      const raw = localStorage.getItem('recall_selectedTopics')
+      if (raw) return normalizeTopicList(JSON.parse(raw))
+      const single = localStorage.getItem('recall_selectedTopic')
+      return single && single !== 'All' && isTopic(single) ? [single] : []
+    } catch { return [] }
   })
   const [selectedBundle, setSelectedBundle] = useState<string | null>(() => {
     try { return localStorage.getItem('recall_selectedBundle') || null } catch { return null }
   })
   const [toast, setToast] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [questionsError, setQuestionsError] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
+  const [authReady, setAuthReady] = useState(false)
   const [streak, setStreak] = useState(0)
   const [notes, setNotes] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem('recall_notes') || '{}') } catch { return {} }
   })
 
-  const didInit = useRef(false)
+  const questionTopics = selectedTopics.join(',')
+  // `user` is a fresh object on every setUser (login re-fetches /me), so depend on the
+  // primitive id — keying the effect off the object refetched and cancelled on each login.
+  const userId = user?.id ?? null
+  const questionsRun = useRef(0)
+
   useEffect(() => {
-    if (didInit.current) return
-    didInit.current = true
     let cancelled = false
+    // never strand the guard: latch authReady even if the session call hangs
+    const timeout = setTimeout(() => { if (!cancelled) setAuthReady(true) }, AUTH_TIMEOUT_MS)
+    bootstrapAuth().then(({ user: u, streak: s }) => {
+      if (cancelled) return
+      // never demote a session that login()/register() already established
+      if (!sessionEstablished) setUser(u)
+      if (s) setStreak(s)
+      setAuthReady(true)
+    })
+    return () => { cancelled = true; clearTimeout(timeout) }
+  }, [])
+
+  // Global 401 handler. Any API call that finds no valid session dispatches
+  // 'auth:unauthorized'; we drop local state so RequireAuth routes redirect to /login.
+  // Do NOT retry the request — the session is gone, not the call.
+  useEffect(() => {
+    const onUnauthorized = () => {
+      sessionEstablished = false
+      authBootstrap = null
+      setUser(null)
+    }
+    window.addEventListener('auth:unauthorized', onUnauthorized)
+    return () => window.removeEventListener('auth:unauthorized', onUnauthorized)
+  }, [])
+
+  useEffect(() => {
+    // every feature route is sign-in gated, so don't fetch (or 401) while signed out
+    if (!authReady) return
+    if (!userId) {
+      setQuestions([])
+      setLoading(false)
+      return
+    }
+    // A run token, not a per-run `cancelled` flag: whichever run is newest owns `loading`.
+    // With a flag, a fetch superseded by a newer one was discarded without ever clearing
+    // `loading`, which pinned Learn on "Loading questions…".
+    const run = ++questionsRun.current
+    const isStale = () => run !== questionsRun.current
     setLoading(true)
-    // public questions — always fetch, but silent on network fail to avoid spam for anon/offline
-    recallApi.questions({ status: 'approved', size: 100, sort: 'created_at.desc' })
+    setQuestionsError(null)
+    // a hung request must not strand the spinner either
+    const timeout = setTimeout(() => {
+      if (isStale()) return
+      setQuestions([])
+      setQuestionsError('Loading questions took too long. Please retry.')
+      setLoading(false)
+    }, QUESTIONS_TIMEOUT_MS)
+    recallApi.questions({
+      status: 'approved',
+      size: 100,
+      sort: 'created_at.desc',
+      ...(questionTopics ? { topics: questionTopics } : {}),
+      ...(questionTopics || selectedBundle ? { mix: 'recall' } : {}),
+    })
       .then(res => {
-        if (cancelled) return
+        if (isStale()) return
         const list = (res as any).data ?? (res as any)
-        let mapped: Question[] = []
-        if (Array.isArray(list) && list.length > 0) mapped = list.map(normalizeQuestion)
-        else if (Array.isArray(res) && res.length > 0) mapped = (res as any).map(normalizeQuestion)
-        if (mapped.length) setQuestions(dedupeQuestions(mapped))
+        const mapped = Array.isArray(list) ? list.map(normalizeQuestion) : []
+        setQuestions(dedupeQuestions(mapped))
+        setQuestionsError(null)
       })
       .catch((err: any) => {
-        if (cancelled) return
-        // silent for network — backend may be down locally; keep empty without toast spam
-        if (err?.isNetworkError) console.warn('[recallApi.questions] offline, using local fallback', err.message)
-        else console.error('[recallApi.questions]', err)
+        if (isStale()) return
+        setQuestions([])
+        setQuestionsError(err?.isNetworkError ? 'Unable to load questions right now.' : 'Unable to load questions for this selection.')
       })
-      .finally(() => { if (!cancelled) setLoading(false) })
-
-    // auth — silent 401 for anon; only fetch progress if logged in
-    recallApi.auth.me(true).then(u => {
-      if (cancelled) return
-      setUser(u as any)
-      // progress is auth-only; fetch only when logged in to avoid 401/connection spam for anon
-      return recallApi.progress().then(p => { if (!cancelled && typeof p.streak === 'number') setStreak(p.streak) }).catch(()=>{})
-    }).catch(() => { if (!cancelled) setUser(null) })
-
-    return () => { cancelled = true }
-  }, [])
+      .finally(() => {
+        clearTimeout(timeout)
+        if (!isStale()) setLoading(false)
+      })
+    return () => { clearTimeout(timeout) }
+  }, [questionTopics, selectedBundle, authReady, userId])
   useEffect(() => { if (toast) { const t = setTimeout(()=>setToast(null), 2500); return ()=>clearTimeout(t)} }, [toast])
   useEffect(() => { try { localStorage.setItem('recall_selectedTopic', selectedTopic) } catch {} }, [selectedTopic])
   useEffect(() => { try { localStorage.setItem('recall_selectedTopics', JSON.stringify(selectedTopics)) } catch {} }, [selectedTopics])
@@ -180,9 +289,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setQuestions(prev => prev.map(q => q.id === id ? { ...q, bookmarked: !q.bookmarked } : q))
     const isNowBookmarked = !questions.find(q => q.id === id)?.bookmarked
     const call = isNowBookmarked ? recallApi.bookmarks.create(id) : recallApi.bookmarks.remove(id)
-    call.catch(() => {
-      // revert on failure (keeps local fallback)
+    call.catch((err: any) => {
+      // revert on failure and tell the user, rather than silently losing the bookmark
       setQuestions(prev => prev.map(q => q.id === id ? { ...q, bookmarked: !q.bookmarked } : q))
+      showToast(err?.status === 401 ? 'Session expired — sign in again' : 'Could not save bookmark')
     })
   }
   const updateConfidence = (id: string, delta: number, meta?: { revealedAt?: string; durationMs?: number }) => {
@@ -198,21 +308,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setQuestions(prev => prev.map(q => q.id === id ? { ...q, confidenceScore: res.confidenceScore, reviewCount: res.reviewCount ?? q.reviewCount } : q))
         if (typeof res.streak === 'number') setStreak(res.streak)
       }
-    }).catch(() => {})
+    }).catch((err: any) => {
+      // never drop a swipe silently — the optimistic score above is a lie until this lands
+      setQuestions(prev => prev.map(q => q.id === id ? { ...q, confidenceScore: Math.max(0, Math.min(100, q.confidenceScore - delta)), reviewCount: Math.max(0, q.reviewCount - 1) } : q))
+      showToast(err?.status === 401 ? 'Session expired — sign in again' : 'Could not save that swipe')
+    })
   }
   const login = async (email: string, password: string) => {
     const u = await recallApi.auth.login({ email, password })
+    sessionEstablished = true
+    authBootstrap = null
     setUser(u as any)
+    setAuthReady(true)
     recallApi.auth.me(true).then(mu => setUser(mu as any)).catch(()=>{})
     return u as any
   }
   const register = async (email: string, password: string, name: string) => {
     if (password.length < 8) throw new Error('Password must be at least 8 characters')
     const u = await recallApi.auth.register({ email, password, name })
+    sessionEstablished = true
+    authBootstrap = null
     setUser(u as any)
+    setAuthReady(true)
     return u as any
   }
+  // Google already established the session server-side and handed us the user, so there is
+  // nothing to re-read — but the guard on `sessionEstablished` still matters: an in-flight
+  // bootstrap that resolves later captured the anonymous state and would demote this user.
+  const signInWithGoogle = async (credential: string): Promise<User> => {
+    const u = await recallApi.auth.google({ credential })
+    sessionEstablished = true
+    authBootstrap = null
+    setUser(u as any)
+    setAuthReady(true)
+    return u as any
+  }
+  const requestOtp = async (email: string) => {
+    return recallApi.auth.otpRequest({ email })
+  }
+  // Verification, not sign-in: the session was already established by register()/login(),
+  // and the backend requires one to exist. Re-fetch /me so the UI reflects the new
+  // verified state instead of leaving a stale user object in place.
+  const verifyOtp = async (email: string, code: string): Promise<User> => {
+    await recallApi.auth.otpVerify({ email, code })
+    const fresh = await recallApi.auth.me(true).catch(() => null)
+    if (fresh) setUser(fresh as User)
+    return (fresh ?? user) as User
+  }
+  const setPassword = async (newPassword: string) => {
+    return recallApi.auth.setPassword(newPassword)
+  }
   const signOut = async () => {
+    sessionEstablished = false
+    authBootstrap = null
+    // A 401 here (session already gone) still means signed out locally — clear state
+    // regardless so the UI can never get stuck showing a user we no longer have.
     try { await recallApi.auth.logout() } finally { setUser(null) }
   }
   const logout = signOut
@@ -235,7 +385,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const hasAccess = () => true
   const showToast = (msg: string) => setToast(msg)
 
-  const value = useMemo(() => ({ questions, setQuestions, toggleBookmark, updateConfidence, search, setSearch, selectedTopic, setSelectedTopic, selectedTopics, setSelectedTopics, selectedBundle, setSelectedBundle, streak, toast, showToast, loading, user, login, register, signOut, logout, updateProfile, patchMetadata, patchLevel, hasAccess, notes, saveNote, deleteNote }), [questions, search, selectedTopic, selectedTopics, selectedBundle, toast, loading, user, streak, notes])
+  const value = useMemo(() => ({ questions, setQuestions, toggleBookmark, updateConfidence, search, setSearch, selectedTopic, setSelectedTopic, selectedTopics, setSelectedTopics, selectedBundle, setSelectedBundle, streak, toast, showToast, loading, questionsError, user, authReady, login, register, signOut, logout, signInWithGoogle, requestOtp, verifyOtp, setPassword, updateProfile, patchMetadata, patchLevel, hasAccess, notes, saveNote, deleteNote }), [questions, search, selectedTopic, selectedTopics, selectedBundle, toast, loading, questionsError, user, authReady, streak, notes])
   return <Ctx.Provider value={value}>{children}
     {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 glass-strong px-5 py-3 rounded-full text-sm font-medium z-50 flex items-center gap-2 shadow-xl border border-white/10">
       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />{toast}

@@ -1,0 +1,21 @@
+{
+  "name": "RECALL — Master Interviews One Swipe At A Time",
+  "short_name": "RECALL",
+  "description": "Practice curated interview questions with spaced repetition.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050816",
+  "theme_color": "#050816",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

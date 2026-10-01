@@ -1,34 +1,48 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useCallback, useState } from 'react'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useApp } from '@/store/AppContext'
-import { Sparkles, ArrowRight } from 'lucide-react'
+import { safeRedirect } from '@/lib/utils'
+import { Sparkles, ArrowRight, Mail, Lock } from 'lucide-react'
+import { GoogleSignInButton } from '@/components/ui/google-signin-button'
 
-export default function Login(){
-  const { login, showToast, user } = useApp()
+export default function Login() {
+  const { login, signInWithGoogle, showToast, user } = useApp()
   const nav = useNavigate()
-  const [form, setForm] = useState({ email:'', password:'' })
+  const [params] = useSearchParams()
+  const redirectTo = safeRedirect(params.get('from'))
+  const [form, setForm] = useState({ email: '', password: '' })
   const [loading, setLoading] = useState(false)
-  const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({})
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
-  if (user) {
-    nav('/dashboard')
-    return null
-  }
+  const onGoogleCredential = useCallback(async (credential: string) => {
+    await signInWithGoogle(credential)
+    showToast('Signed in with Google')
+    nav(redirectTo, { replace: true })
+  }, [nav, redirectTo, showToast, signInWithGoogle])
 
-  const submit = async (e:React.FormEvent)=>{
+  // <Navigate> rather than nav() during render: navigating while rendering is a React state
+  // update from inside another component's render, which warns and double-fires in StrictMode.
+  if (user) return <Navigate to={redirectTo} replace />
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFieldErrors({})
-    if (!form.email || !form.password) return showToast('Email & password required')
+    if (!form.email || !form.password) {
+      showToast('Email & password required')
+      return
+    }
     setLoading(true)
     try {
       await login(form.email, form.password)
       showToast('Signed in')
-      nav('/dashboard')
-    } catch (err:any) {
+      nav(redirectTo, { replace: true })
+    } catch (err: any) {
       if (err.status === 401) showToast('Invalid email or password')
       else if (err.status === 400 && err.data?.fieldErrors) setFieldErrors(err.data.fieldErrors)
       else showToast(err.data?.error || err.message || 'Login failed')
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -43,16 +57,51 @@ export default function Login(){
             <h1 className="text-2xl font-bold">Sign in</h1>
             <p className="text-sm text-slate-400 mt-1">Welcome back</p>
           </div>
-          <label className="block space-y-1.5"><span className="text-sm text-slate-300">Email</span>
-            <input value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="a@b.com" type="email" required className="w-full h-11 px-3 rounded-xl bg-white/5 border border-white/10 outline-none focus:border-blue-500/50" />
+
+          <label className="block space-y-1.5">
+            <span className="text-sm text-slate-300">Email</span>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+              <input
+                value={form.email}
+                onChange={e => setForm({ ...form, email: e.target.value })}
+                placeholder="a@b.com"
+                type="email"
+                required
+                autoComplete="email"
+                className="w-full h-11 pl-10 pr-3 rounded-xl bg-white/5 border border-white/10 outline-none focus:border-blue-500/50"
+              />
+            </div>
             {fieldErrors.email && <span className="text-xs text-red-400">{fieldErrors.email}</span>}
           </label>
-          <label className="block space-y-1.5"><span className="text-sm text-slate-300">Password</span>
-            <input value={form.password} onChange={e=>setForm({...form,password:e.target.value})} type="password" required className="w-full h-11 px-3 rounded-xl bg-white/5 border border-white/10 outline-none focus:border-blue-500/50" />
+
+          <label className="block space-y-1.5">
+            <span className="text-sm text-slate-300">Password</span>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+              <input
+                value={form.password}
+                onChange={e => setForm({ ...form, password: e.target.value })}
+                type="password"
+                required
+                autoComplete="current-password"
+                className="w-full h-11 pl-10 pr-3 rounded-xl bg-white/5 border border-white/10 outline-none focus:border-blue-500/50"
+              />
+            </div>
             {fieldErrors.password && <span className="text-xs text-red-400">{fieldErrors.password}</span>}
           </label>
-          <button disabled={loading} className="w-full py-3 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-medium disabled:opacity-60 flex items-center justify-center gap-2">{loading?'Signing in…':'Sign in'} <ArrowRight className="w-4 h-4"/></button>
-          <div className="text-sm text-center text-slate-400">No account? <Link to="/register" className="text-blue-400">Sign up</Link> • <Link to="/" className="text-slate-300">Home</Link></div>
+
+          <button disabled={loading} className="w-full py-3 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-medium disabled:opacity-60 flex items-center justify-center gap-2">
+            {loading ? 'Signing in…' : 'Sign in'} <ArrowRight className="w-4 h-4"/>
+          </button>
+
+          <GoogleSignInButton withDivider onCredential={onGoogleCredential} />
+
+          <div className="text-sm text-center text-slate-400">
+            <Link to={`/register?from=${encodeURIComponent(params.get('from') ?? '')}`} className="text-blue-400">Sign up</Link>
+            <span className="mx-2">•</span>
+            <Link to="/" className="text-slate-300">Home</Link>
+          </div>
         </form>
       </div>
     </div>

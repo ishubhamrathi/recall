@@ -1,5 +1,6 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AppProvider } from '@/store/AppContext'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { AppProvider, useApp } from '@/store/AppContext'
+import { AddToHomeScreen } from '@/components/AddToHomeScreen'
 import Landing from '@/pages/Landing'
 import Dashboard from '@/pages/Dashboard'
 import Learn from '@/pages/Learn'
@@ -12,25 +13,40 @@ import Login from '@/pages/Login'
 import Register from '@/pages/Register'
 import { AppShell } from '@/components/layout/AppShell'
 
-function Protected({ children }: { children: React.ReactNode }) {
+// Every feature route is mandatory-sign-in. Waits for session rehydration first,
+// otherwise a signed-in user hard-refreshing would be bounced to /login.
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { user, authReady } = useApp()
+  const { pathname } = useLocation()
+  if (!authReady) {
+    return (
+      <AppShell>
+        <div className="min-h-[60vh] grid place-items-center text-sm text-slate-400">Checking your session…</div>
+      </AppShell>
+    )
+  }
+  if (!user) return <Navigate to={`/login?from=${encodeURIComponent(pathname)}`} replace />
   return <AppShell>{children}</AppShell>
 }
 
 export default function App(){
   return (
     <AppProvider>
+      <AddToHomeScreen />
       <BrowserRouter>
         <Routes>
+          {/* public: entry point + the auth pages themselves */}
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
-          <Route path="/learn" element={<Protected><Learn /></Protected>} />
-          <Route path="/bookmarks" element={<Protected><Bookmarks /></Protected>} />
-          <Route path="/progress" element={<Protected><Progress /></Protected>} />
-          <Route path="/topics" element={<Protected><Topics /></Protected>} />
-          <Route path="/contribute" element={<Protected><Contribute /></Protected>} />
-          <Route path="/search" element={<Protected><Search /></Protected>} />
+          {/* everything else requires a signed-in user */}
+          <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+          <Route path="/learn" element={<RequireAuth><Learn /></RequireAuth>} />
+          <Route path="/bookmarks" element={<RequireAuth><Bookmarks /></RequireAuth>} />
+          <Route path="/progress" element={<RequireAuth><Progress /></RequireAuth>} />
+          <Route path="/topics" element={<RequireAuth><Topics /></RequireAuth>} />
+          <Route path="/contribute" element={<RequireAuth><Contribute /></RequireAuth>} />
+          <Route path="/search" element={<RequireAuth><Search /></RequireAuth>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

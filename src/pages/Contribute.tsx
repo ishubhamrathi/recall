@@ -1,14 +1,38 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '@/store/AppContext'
 import type { Difficulty, Topic } from '@/data/mockData'
 import { recallApi } from '@/api/client'
 
+const DRAFT_KEY = 'recall_contribute_draft'
+type ContributeForm = { topic: Topic; difficulty: Difficulty; question: string; answer: string; explanation: string; tags: string }
+const EMPTY_FORM: ContributeForm = {topic:'Java', difficulty:'Medium', question:'', answer:'', explanation:'', tags:''}
+
 export default function Contribute(){
-  const { questions, setQuestions, showToast } = useApp()
-  const [form, setForm] = useState({topic:'Java' as Topic, difficulty:'Medium' as Difficulty, question:'', answer:'', explanation:'', tags:''})
+  const { questions, setQuestions, showToast, user } = useApp()
+  const nav = useNavigate()
+  const { pathname } = useLocation()
+  const [form, setForm] = useState<ContributeForm>(() => {
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY)
+      return raw ? { ...EMPTY_FORM, ...JSON.parse(raw) } : EMPTY_FORM
+    } catch { return EMPTY_FORM }
+  })
   const [submitting, setSubmitting] = useState(false)
+
+  // survive a sign-in round trip (e.g. session expired mid-submit)
+  useEffect(() => {
+    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(form)) } catch {}
+  }, [form])
+
+  const requireSignIn = () => {
+    showToast('Please sign in to contribute')
+    nav(`/login?from=${encodeURIComponent(pathname)}`, { replace: true })
+  }
+
   const submit = async (e:React.FormEvent)=>{
     e.preventDefault()
+    if (!user) return requireSignIn()
     if(!form.question || !form.answer) return showToast('Question & answer required')
     const payload = {
       topic: form.topic,
@@ -39,11 +63,11 @@ export default function Contribute(){
       } as any
       setQuestions([...questions, norm])
       showToast(created.status === 'pending' ? 'Submitted for review' : 'Submitted')
-      setForm({topic:'Java', difficulty:'Medium', question:'', answer:'', explanation:'', tags:''})
+      setForm(EMPTY_FORM)
     } catch (err: any) {
       const msg = err?.data?.error || err?.message || 'Failed to submit'
-      if (err?.status === 401) showToast('Please sign in to contribute')
-      else showToast(msg)
+      if (err?.status === 401) return requireSignIn()
+      showToast(msg)
     } finally {
       setSubmitting(false)
     }
